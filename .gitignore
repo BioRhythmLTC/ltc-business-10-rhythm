@@ -1,0 +1,51 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+
+# --- Virtual envs ---
+x5_ner_env/
+.venv/
+venv/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- OS / editors ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# --- Env / secrets ---
+.env
+.env.*
+
+# --- Model artifacts & checkpoints ---
+# Ignore all artifacts by default but keep README placeholder
+artifacts/**
+!artifacts/README.md
+ner_runs/**
+hf_out/**
+*.pt
+*.bin
+*.safetensors
+
+# --- Datasets & evaluation outputs ---
+Датасет 2/**
+submission*.csv
+!examples/submission*.csv
+eval_out/**
+eval_out_*/**
+
+# --- Logs and temp ---
+*.log
+*.tmp
+.cache/
+
+

@@ -1,0 +1,22 @@
+services:
+  x5-ner:
+    build: .
+    image: x5-ner:local
+    environment:
+      - ARTIFACTS_DIR=/app/artifacts
+      - TOKENIZERS_PARALLELISM=false
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - HOST=0.0.0.0
+      - PORT=8000
+      # - GUNICORN_WORKERS=3  # tune per CPU/GPU
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health | grep -q 'ok'"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s

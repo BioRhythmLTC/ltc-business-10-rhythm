@@ -1,0 +1,43 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Local envs
+.venv/
+venv/
+x5_ner_env/
+
+# Notebooks and checkpoints
+notebooks/
+.ipynb_checkpoints/
+*.ipynb
+
+# Datasets, submissions, and evaluation outputs
+Датасет 2/
+examples/*.csv
+submission*.csv
+eval_out/
+eval_out_*/
+
+# Artifacts (mounted or provided at runtime)
+artifacts/
+
+# Dev and docs
+requirements-dev.txt
+.pre-commit-config.yaml
+.editorconfig
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+CODEOWNERS
+README.md
+
+# Logs and tmp
+*.log
+*.tmp

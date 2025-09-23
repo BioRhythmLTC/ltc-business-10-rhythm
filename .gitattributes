@@ -1,0 +1,16 @@
+# Normalize line endings to LF for text files
+* text=auto eol=lf
+
+# Treat common data/binary as binary
+*.bin binary
+*.pt binary
+*.safetensors binary
+*.onnx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
+*.tar binary
+*.gz binary
