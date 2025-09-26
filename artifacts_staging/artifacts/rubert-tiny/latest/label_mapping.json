@@ -1,0 +1,35 @@
+{
+  "labels": [
+    "O",
+    "B-TYPE",
+    "I-TYPE",
+    "B-BRAND",
+    "I-BRAND",
+    "B-VOLUME",
+    "I-VOLUME",
+    "B-PERCENT",
+    "I-PERCENT"
+  ],
+  "label2id": {
+    "O": 0,
+    "B-TYPE": 1,
+    "I-TYPE": 2,
+    "B-BRAND": 3,
+    "I-BRAND": 4,
+    "B-VOLUME": 5,
+    "I-VOLUME": 6,
+    "B-PERCENT": 7,
+    "I-PERCENT": 8
+  },
+  "id2label": {
+    "0": "O",
+    "1": "B-TYPE",
+    "2": "I-TYPE",
+    "3": "B-BRAND",
+    "4": "I-BRAND",
+    "5": "B-VOLUME",
+    "6": "I-VOLUME",
+    "7": "B-PERCENT",
+    "8": "I-PERCENT"
+  }
+}

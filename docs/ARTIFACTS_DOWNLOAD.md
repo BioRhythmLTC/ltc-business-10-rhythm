@@ -62,6 +62,21 @@ curl -L -o examples/submission2.csv \
   --timeout 1.0
 ```
 
+## Using with Docker Compose
+The compose file maps `./artifacts` from your host to `/app/artifacts` in the container and sets `ARTIFACTS_DIR=/app/artifacts/rubert-tiny/latest`.
+
+Unzip so that this path exists on the host:
+
+```bash
+# Ensure the repo root contains ./artifacts/rubert-tiny/latest
+unzip -o rubert-tiny-latest.zip -d .
+
+# Resulting tree (important part):
+# ./artifacts/rubert-tiny/latest/{config.json, tokenizer.json, ..., model.safetensors}
+
+docker compose up -d --build
+```
+
 ## Service startup with artifacts
 ```bash
 # If artifacts are in ./artifacts

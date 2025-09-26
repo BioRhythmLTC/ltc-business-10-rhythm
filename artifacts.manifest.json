@@ -1,0 +1,14 @@
+{
+  "latest_tag": "v1.0.0",
+  "assets": {
+    "archive": "artifacts-v1.0.0.zip",
+    "checksum": "artifacts-v1.0.0.zip.sha256",
+    "test_csv": "submission2.csv"
+  },
+  "checksum_sha256": "f12f084c9168bde2acde692e4e74958c346797c190fb9119d2e5e23b7e86ecca",
+  "placement": {
+    "artifacts_dir": "./artifacts",
+    "test_csv_path": "examples/submission2.csv"
+  },
+  "notes": "Download from GitHub Releases and unpack into artifacts/."
+}
