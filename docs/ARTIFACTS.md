@@ -26,3 +26,6 @@ See `docs/versions.example.json` for a template.
 - Unzip the downloaded archive next to the repo and point the service to it:
   - `ARTIFACTS_DIR=./artifacts uvicorn service.main:app --host 0.0.0.0 --port 8000`
 - Or set `ARTIFACTS_DIR` to an absolute path.
+
+## Downloading from GitHub Releases
+See `docs/ARTIFACTS_DOWNLOAD.md` for step-by-step instructions to download, verify, and place artifacts (and optional `examples/submission2.csv`).

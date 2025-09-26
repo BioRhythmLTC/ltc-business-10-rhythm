@@ -3,7 +3,7 @@ services:
     build: .
     image: x5-ner:local
     environment:
-      - ARTIFACTS_DIR=/app/artifacts/rubert-tiny/20250926-142613
+      - ARTIFACTS_DIR=/app/artifacts/rubert-tiny/latest
       - X5_FORCE_DEVICE=cpu
       - TOKENIZERS_PARALLELISM=false
       - OMP_NUM_THREADS=1
