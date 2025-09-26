@@ -13,6 +13,7 @@ from .utils import (
     _extract_spans_from_bio,
     _merge_adjacent_spans,
     _spans_to_api_spans,
+    preprocess_text_with_mapping,
 )
 
 
@@ -133,24 +134,37 @@ def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap:
         merged.append((s, e, t))
     return merged
 
-def _spans_to_api_spans(text: str, spans: List[Tuple[int, int, str]]) -> List[Dict[str, Any]]:
+def _spans_to_api_spans(text: str, spans: List[Tuple[int, int, str]], include_O: bool = False) -> List[Dict[str, Any]]:
     merged = _merge_adjacent_spans(text, spans)
     words = _find_word_spans(text)
-    api: List[Dict[str, Any]] = []
+    # Build mapping from word span to tag; default to O if include_O enabled
+    word_tag_map: Dict[Tuple[int, int], str] = {}
     for s, e, t in merged:
         if not t:
             continue
         inside = [(ws, we) for (ws, we) in words if not (we <= s or ws >= e)]
         for j, (ws, we) in enumerate(inside):
             tag = ("B-" if j == 0 else "I-") + t
+            word_tag_map[(ws, we)] = tag
+    api: List[Dict[str, Any]] = []
+    for ws, we in words:
+        tag = word_tag_map.get((ws, we))
+        if tag:
             api.append({"start_index": ws, "end_index": we, "entity": tag})
+        elif include_O:
+            api.append({"start_index": ws, "end_index": we, "entity": "O"})
     return api
 
 
 def predict_api_spans(text: str) -> List[Dict[str, Any]]:
     model, tokenizer, device, id2label_map = _ensure_loaded()
+    # Apply the same lightweight preprocessing as in the notebook pipeline
+    # Length is preserved 1:1, so indices remain valid
+    normalized_text, _ = preprocess_text_with_mapping(
+        text, do_lower=True, apply_translit_map=True
+    )
     with torch.no_grad():
-        enc = tokenizer(text, return_offsets_mapping=True, truncation=True, return_tensors="pt")
+        enc = tokenizer(normalized_text, return_offsets_mapping=True, truncation=True, return_tensors="pt")
         offsets: List[Tuple[int, int]] = enc["offset_mapping"][0].tolist()
         inp = {k: v.to(device) for k, v in enc.items() if k != "offset_mapping"}
         logits = model(**inp).logits
@@ -162,9 +176,13 @@ def predict_api_spans(text: str) -> List[Dict[str, Any]]:
                 return cfg_map.get(i, cfg_map.get(str(i), id2label_map.get(i, "O")))
             return id2label_map.get(i, "O")
         token_tags = [_id2label(int(t)) for t in pred_ids]
-        char_bio = _token_tags_to_char_bio(text, token_tags, offsets)
-        spans = _extract_spans_from_bio(text[:max([e for (_, e) in offsets if e is not None] or [0])], char_bio)
-        return _spans_to_api_spans(text, spans)
+        char_bio = _token_tags_to_char_bio(normalized_text, token_tags, offsets)
+        # Decode contiguous char spans and then project to words, as in previous stable version
+        spans = _extract_spans_from_bio(
+            normalized_text[:max([e for (_, e) in offsets if e is not None] or [0])],
+            char_bio,
+        )
+        return _spans_to_api_spans(normalized_text, spans, include_O=True)
 
 
 class PredictRequest(BaseModel):

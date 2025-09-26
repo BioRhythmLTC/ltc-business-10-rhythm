@@ -57,18 +57,47 @@ async def one_request(session: aiohttp.ClientSession, url: str, query: str, time
         return RequestResult(ok=False, latency_s=dt, http_status=0, query=query)
 
 
+async def one_request_batch(
+    session: aiohttp.ClientSession,
+    url: str,
+    queries: List[str],
+    timeout_s: float,
+) -> RequestResult:
+    t0 = time.perf_counter()
+    payload_desc = f"[batch_size={len(queries)}]"
+    try:
+        async with session.post(url, json={"inputs": queries}, timeout=timeout_s) as resp:
+            _ = await resp.json()
+            dt = time.perf_counter() - t0
+            return RequestResult(
+                ok=(resp.status == 200),
+                latency_s=dt,
+                http_status=resp.status,
+                query=payload_desc,
+            )
+    except Exception:
+        dt = time.perf_counter() - t0
+        return RequestResult(ok=False, latency_s=dt, http_status=0, query=payload_desc)
+
+
 async def client_worker(
     base_url: str,
     requests_per_client: int,
     timeout_s: float,
+    batch_size: int,
 ) -> List[RequestResult]:
-    url = base_url.rstrip("/") + "/api/predict"
+    use_batch = max(1, int(batch_size)) > 1
+    url = base_url.rstrip("/") + ("/api/predict_batch" if use_batch else "/api/predict")
     connector = aiohttp.TCPConnector(limit=0, ssl=False)
     async with aiohttp.ClientSession(connector=connector) as session:
         results: List[RequestResult] = []
         for _ in range(requests_per_client):
-            q = random.choice(GLOBAL_QUERIES)
-            results.append(await one_request(session, url, q, timeout_s))
+            if use_batch:
+                batch = [random.choice(GLOBAL_QUERIES) for _ in range(max(1, int(batch_size)))]
+                results.append(await one_request_batch(session, url, batch, timeout_s))
+            else:
+                q = random.choice(GLOBAL_QUERIES)
+                results.append(await one_request(session, url, q, timeout_s))
         return results
 
 
@@ -111,9 +140,10 @@ async def run_load(
     requests_per_client: int,
     timeout_s: float,
     log_path: str | None,
+    batch_size: int,
 ):
     tasks = [
-        asyncio.create_task(client_worker(base_url, requests_per_client, timeout_s))
+        asyncio.create_task(client_worker(base_url, requests_per_client, timeout_s, batch_size))
         for _ in range(concurrency)
     ]
     all_results: List[RequestResult] = []
@@ -152,6 +182,7 @@ def main() -> None:
     ap.add_argument("--requests-per-client", type=int, default=50)
     ap.add_argument("--timeout", type=float, default=1.0, help="SLA threshold in seconds")
     ap.add_argument("--log_requests", default="", help="Optional CSV path to save all sent requests")
+    ap.add_argument("--batch-size", type=int, default=1, help="Number of inputs per HTTP request; >1 uses /api/predict_batch")
     args = ap.parse_args()
 
     global GLOBAL_QUERIES
@@ -167,6 +198,7 @@ def main() -> None:
             requests_per_client=args.requests_per_client,
             timeout_s=args.timeout,
             log_path=(args.log_requests or None),
+            batch_size=max(1, int(args.batch_size)),
         )
     )
 
