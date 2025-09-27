@@ -3,11 +3,16 @@
 import hashlib
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import torch
 from cachetools import TTLCache
-from transformers import AutoModelForTokenClassification, AutoTokenizer
+from transformers import (
+    AutoModelForTokenClassification,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+)
 
 from .config import (
     ARTIFACTS_DIR,
@@ -31,8 +36,8 @@ class ModelManager:
 
     def __init__(self, artifacts_dir: str) -> None:
         self.artifacts_dir = artifacts_dir
-        self.model: Optional[AutoModelForTokenClassification] = None
-        self.tokenizer: Optional[AutoTokenizer] = None
+        self.model: Optional[PreTrainedModel] = None
+        self.tokenizer: Optional[PreTrainedTokenizerBase] = None
         self.device: str = "cpu"
         self.id2label: Dict[int, str] = {}
         self._loaded = False
@@ -87,7 +92,9 @@ class ModelManager:
 
             self.device = self._select_device()
             if self.model is not None:
-                self.model = self.model.to(self.device).eval()
+                # Do not reassign to preserve precise type information for mypy
+                self.model.to(self.device)
+                self.model.eval()
 
             # Load id2label mapping
             if self.model is not None:
@@ -137,7 +144,8 @@ class ModelManager:
                 # Tokenize
                 if self.tokenizer is None:
                     raise RuntimeError("Tokenizer not loaded")
-                encoding = self.tokenizer(
+                tokenizer = cast(PreTrainedTokenizerBase, self.tokenizer)
+                encoding = tokenizer(
                     normalized_text,
                     return_offsets_mapping=True,
                     truncation=True,
@@ -155,7 +163,8 @@ class ModelManager:
                 # Get predictions
                 if self.model is None:
                     raise RuntimeError("Model not loaded")
-                outputs = self.model(**inputs)
+                model = cast(PreTrainedModel, self.model)
+                outputs = model(**inputs)
                 logits = outputs.logits
                 pred_ids = logits.argmax(-1)[0].tolist()
 
