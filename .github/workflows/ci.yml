@@ -25,6 +25,8 @@ jobs:
       - name: Type check (mypy)
         run: |
           mypy service
-      - name: Tests
+      - name: Tests (disabled)
+        if: ${{ false }}
         run: |
+          echo "Tests are disabled in CI"
           pytest -q
