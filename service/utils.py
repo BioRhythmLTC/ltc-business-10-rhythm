@@ -90,8 +90,6 @@ def preprocess_text_with_mapping(
     Returns normalized text and a mapping from normalized char index → original char index.
     All transformations preserve length, so mapping is 1:1.
     """
-    if not isinstance(text, str):
-        text = str(text) if text is not None else ""
 
     # 1) Replace common invisible/odd spaces with normal space, preserve length
     invisible_spaces = {
@@ -304,11 +302,11 @@ def _spans_to_api_spans(
             continue
         inside = [(ws, we) for (ws, we) in words if not (we <= s or ws >= e)]
         for j, (ws, we) in enumerate(inside):
-            tag = ("B-" if j == 0 else "I-") + t
-            word_tag_map[(ws, we)] = tag
+            entity_tag = ("B-" if j == 0 else "I-") + t
+            word_tag_map[(ws, we)] = entity_tag
     api: List[Dict[str, Any]] = []
     for ws, we in words:
-        tag = word_tag_map.get((ws, we))
+        tag: Optional[str] = word_tag_map.get((ws, we))
         if tag:
             api.append({"start_index": ws, "end_index": we, "entity": tag})
         elif include_O:

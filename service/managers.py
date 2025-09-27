@@ -3,7 +3,7 @@
 import hashlib
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from cachetools import TTLCache
@@ -123,9 +123,6 @@ class ModelManager:
         if not self._loaded:
             raise RuntimeError("Model not loaded")
 
-        if not isinstance(text, str):
-            text = str(text) if text is not None else ""
-
         try:
             # Preprocess text
             normalized_text, _ = preprocess_text_with_mapping(
@@ -142,7 +139,7 @@ class ModelManager:
                     truncation=True,
                     return_tensors="pt",
                 )
-                offsets: List[tuple[int, int]] = encoding["offset_mapping"][0].tolist()
+                offsets: List[Tuple[int, int]] = encoding["offset_mapping"][0].tolist()
 
                 # Move inputs to device
                 inputs = {
@@ -212,7 +209,7 @@ class CacheManager:
             max_size: Maximum number of items in cache.
             ttl_seconds: Time-to-live for cache items in seconds.
         """
-        self.cache = TTLCache(maxsize=max_size, ttl=ttl_seconds)
+        self.cache: TTLCache[str, Any] = TTLCache(maxsize=max_size, ttl=ttl_seconds)
         self.hit_count = 0
         self.miss_count = 0
         self.enabled = CACHE_ENABLED
@@ -244,7 +241,7 @@ class CacheManager:
             return None
 
         cache_key = self._get_cache_key(text)
-        result = self.cache.get(cache_key)
+        result: Optional[List[Dict[str, Any]]] = self.cache.get(cache_key)
 
         if result is not None:
             self.hit_count += 1
