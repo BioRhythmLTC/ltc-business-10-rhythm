@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-
+from typing import Any, Dict, List, Optional, Tuple
 
 # -----------------------------
 # Configuration for preprocessing
@@ -12,8 +11,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 @dataclass
 class PreprocessConfig:
-    """Preprocessconfig.
-    """
+    """Preprocessconfig."""
+
     do_lower: bool = True
     apply_translit_map: bool = True
     max_seq_len: int = 128
@@ -44,14 +43,35 @@ class Preprocessor:
 
     # Confusable mappings (Latin<->Cyrillic) — match notebook logic
     LAT_TO_CYR = {
-        'A':'А','a':'а','B':'В','b':'в','C':'С','c':'с','E':'Е','e':'е','H':'Н','h':'н',
-        'K':'К','k':'к','M':'М','m':'м','O':'О','o':'о','P':'Р','p':'р','T':'Т','t':'т',
-        'X':'Х','x':'х','Y':'У','y':'у'
+        "A": "А",
+        "a": "а",
+        "B": "В",
+        "b": "в",
+        "C": "С",
+        "c": "с",
+        "E": "Е",
+        "e": "е",
+        "H": "Н",
+        "h": "н",
+        "K": "К",
+        "k": "к",
+        "M": "М",
+        "m": "м",
+        "O": "О",
+        "o": "о",
+        "P": "Р",
+        "p": "р",
+        "T": "Т",
+        "t": "т",
+        "X": "Х",
+        "x": "х",
+        "Y": "У",
+        "y": "у",
     }
     CYR_TO_LAT = {v: k for k, v in LAT_TO_CYR.items()}
 
     # Digit->letter map — match notebook (smaller, conservative set)
-    DIGIT_TO_LETTER = {'0': 'o', '1': 'l', '3': 'e', '5': 's'}
+    DIGIT_TO_LETTER = {"0": "o", "1": "l", "3": "e", "5": "s"}
 
     def __init__(
         self,
@@ -61,14 +81,14 @@ class Preprocessor:
         config: Optional[PreprocessConfig] = None,
     ) -> None:
         """Init.
-        
+
         Args:
             self: Parameter.
             tokenizer: Parameter.
             label2id: Parameter.
             id2label: Parameter.
             config: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -84,11 +104,11 @@ class Preprocessor:
     @classmethod
     def _is_latin(cls, ch: str) -> bool:
         """Is latin.
-        
+
         Args:
             cls: Parameter.
             ch: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -97,11 +117,11 @@ class Preprocessor:
     @classmethod
     def _is_cyrillic(cls, ch: str) -> bool:
         """Is cyrillic.
-        
+
         Args:
             cls: Parameter.
             ch: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -110,11 +130,11 @@ class Preprocessor:
     @classmethod
     def _token_script_stats(cls, tok: str) -> Tuple[int, int]:
         """Token script stats.
-        
+
         Args:
             cls: Parameter.
             tok: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -125,12 +145,12 @@ class Preprocessor:
     @classmethod
     def _normalize_mixed_script_token(cls, tok: str, apply_translit_map: bool) -> str:
         """Normalize mixed script token.
-        
+
         Args:
             cls: Parameter.
             tok: Parameter.
             apply_translit_map: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -139,17 +159,17 @@ class Preprocessor:
             return tok
         # If mixed, map minority script characters into the majority script
         if cyr >= lat:
-            return ''.join(cls.LAT_TO_CYR.get(ch, ch) for ch in tok)
-        return ''.join(cls.CYR_TO_LAT.get(ch, ch) for ch in tok)
+            return "".join(cls.LAT_TO_CYR.get(ch, ch) for ch in tok)
+        return "".join(cls.CYR_TO_LAT.get(ch, ch) for ch in tok)
 
     @classmethod
     def _normalize_digit_letter_confusables(cls, tok: str) -> str:
         """Normalize digit letter confusables.
-        
+
         Args:
             cls: Parameter.
             tok: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -166,11 +186,11 @@ class Preprocessor:
     @classmethod
     def _normalize_simple_subs(cls, tok: str) -> str:
         """Normalize simple subs.
-        
+
         Args:
             cls: Parameter.
             tok: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -218,8 +238,10 @@ class Preprocessor:
                 index_map.append(i)
                 i += 1
                 continue
-            word = stage[m.start():m.end()]
-            fixed = self._normalize_mixed_script_token(word, apply_translit_map=self.config.apply_translit_map)
+            word = stage[m.start() : m.end()]
+            fixed = self._normalize_mixed_script_token(
+                word, apply_translit_map=self.config.apply_translit_map
+            )
             fixed = self._normalize_digit_letter_confusables(fixed)
             for j, ch in enumerate(fixed):
                 out_chars.append(ch)
@@ -236,11 +258,11 @@ class Preprocessor:
     @staticmethod
     def to_char_bio(sample: str, spans: List[Tuple[int, int, str]]) -> List[str]:
         """To char bio.
-        
+
         Args:
             sample: Parameter.
             spans: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -259,12 +281,12 @@ class Preprocessor:
 
     def align_bio_to_tokens(self, text: str, char_bio: List[str]) -> Dict[str, Any]:
         """Align bio to tokens.
-        
+
         Args:
             self: Parameter.
             text: Parameter.
             char_bio: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -278,7 +300,7 @@ class Preprocessor:
         offsets: List[Tuple[int, int]] = enc["offset_mapping"]
         token_labels: List[int] = []
 
-        for (start, end) in offsets:
+        for start, end in offsets:
             # Many tokenizers set (0,0) for special tokens
             if end == 0 and start == 0:
                 token_labels.append(-100)
@@ -301,7 +323,11 @@ class Preprocessor:
                 continue
 
             bio, etype = tok_label.split("-", 1)
-            if first_pos is not None and first_pos > 0 and char_bio[first_pos - 1].endswith(etype):
+            if (
+                first_pos is not None
+                and first_pos > 0
+                and char_bio[first_pos - 1].endswith(etype)
+            ):
                 tok_tag = f"I-{etype}"
             else:
                 tok_tag = f"B-{etype}"
@@ -315,14 +341,16 @@ class Preprocessor:
     # -----------------------------
 
     @staticmethod
-    def token_tags_to_char_bio(text: str, token_tags: List[str], offsets: List[Tuple[int, int]]) -> List[str]:
+    def token_tags_to_char_bio(
+        text: str, token_tags: List[str], offsets: List[Tuple[int, int]]
+    ) -> List[str]:
         """Token tags to char bio.
-        
+
         Args:
             text: Parameter.
             token_tags: Parameter.
             offsets: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -345,12 +373,12 @@ class Preprocessor:
         text: str, token_tags: List[str], offsets: List[Tuple[int, int]]
     ) -> List[Tuple[int, int, str]]:
         """Decode token tags to char spans.
-        
+
         Args:
             text: Parameter.
             token_tags: Parameter.
             offsets: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -391,25 +419,27 @@ class Preprocessor:
     @classmethod
     def find_word_spans(cls, text: str) -> List[Tuple[int, int]]:
         """Find word spans.
-        
+
         Args:
             cls: Parameter.
             text: Parameter.
-        
+
         Returns:
             Return value.
         """
         return [(m.start(), m.end()) for m in cls._word_regex.finditer(text)]
 
     @classmethod
-    def char_bio_to_api_spans(cls, text: str, char_bio: List[str]) -> List[Dict[str, Any]]:
+    def char_bio_to_api_spans(
+        cls, text: str, char_bio: List[str]
+    ) -> List[Dict[str, Any]]:
         """Char bio to api spans.
-        
+
         Args:
             cls: Parameter.
             text: Parameter.
             char_bio: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -435,12 +465,12 @@ class Preprocessor:
         text: str, spans: List[Tuple[int, int, str]], max_gap: int = 1
     ) -> List[Tuple[int, int, str]]:
         """Merge adjacent spans.
-        
+
         Args:
             text: Parameter.
             spans: Parameter.
             max_gap: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -459,11 +489,11 @@ class Preprocessor:
         spans: List[Tuple[int, int, str]], norm_to_orig: List[int]
     ) -> List[Tuple[int, int, str]]:
         """Map spans to original.
-        
+
         Args:
             spans: Parameter.
             norm_to_orig: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -481,13 +511,15 @@ class Preprocessor:
         return mapped
 
     @staticmethod
-    def spans_to_char_bio(text_len: int, spans: List[Tuple[int, int, str]]) -> List[str]:
+    def spans_to_char_bio(
+        text_len: int, spans: List[Tuple[int, int, str]]
+    ) -> List[str]:
         """Spans to char bio.
-        
+
         Args:
             text_len: Parameter.
             spans: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -505,13 +537,13 @@ class Preprocessor:
         cls, text: str, spans: List[Tuple[int, int, str]], include_O: bool = False
     ) -> List[Dict[str, Any]]:
         """Spans to api spans.
-        
+
         Args:
             cls: Parameter.
             text: Parameter.
             spans: Parameter.
             include_O: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -535,11 +567,11 @@ class Preprocessor:
 
     def build_char_bio_col(self, df) -> List[List[str]]:
         """Build char bio col.
-        
+
         Args:
             self: Parameter.
             df: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -550,11 +582,11 @@ class Preprocessor:
 
     def encode_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """Encode row.
-        
+
         Args:
             self: Parameter.
             row: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -567,11 +599,11 @@ class Preprocessor:
 
     def encode_dataframe(self, df) -> Any:
         """Encode dataframe.
-        
+
         Args:
             self: Parameter.
             df: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -589,5 +621,3 @@ class Preprocessor:
         ds = ds.map(lambda r: self.encode_row(r), remove_columns=ds.column_names)
         ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
         return ds
-
-

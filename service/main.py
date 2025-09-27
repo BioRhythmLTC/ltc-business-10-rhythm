@@ -13,12 +13,7 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 
-from .config import (
-    ARTIFACTS_DIR,
-    CACHE_ENABLED,
-    CACHE_MAX_SIZE,
-    CACHE_TTL_SECONDS,
-)
+from .config import ARTIFACTS_DIR, CACHE_ENABLED, CACHE_MAX_SIZE, CACHE_TTL_SECONDS
 from .managers import cache_manager, model_manager
 from .models import (
     CacheStatsResponse,

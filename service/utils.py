@@ -1,6 +1,5 @@
 import re
-from typing import List, Dict, Any, Optional, Tuple
-
+from typing import Any, Dict, List, Optional, Tuple
 
 _lat = re.compile(r"[A-Za-z]")
 _cyr = re.compile(r"[А-Яа-яЁё]")
@@ -16,10 +15,19 @@ WHITELIST_UNITS: Dict[str, List[str]] = {
 
 # Build regex group for units: combine stems + explicit forms
 _unit_stems_regex = [
-    r"литр\w*", r"мл\.?", r"миллилитр\w*", r"l",
-    r"килограмм\w*", r"кг\.?", r"kg",
-    r"грамм\w*", r"г\.?", r"g",
-    r"шт\.?", r"штук\w*", r"pcs",
+    r"литр\w*",
+    r"мл\.?",
+    r"миллилитр\w*",
+    r"l",
+    r"килограмм\w*",
+    r"кг\.?",
+    r"kg",
+    r"грамм\w*",
+    r"г\.?",
+    r"g",
+    r"шт\.?",
+    r"штук\w*",
+    r"pcs",
 ]
 _unit_forms = [re.escape(f) for forms in WHITELIST_UNITS.values() for f in forms]
 _unit_forms_regex = _unit_stems_regex + _unit_forms
@@ -27,8 +35,12 @@ _units_group = "(?:" + "|".join(sorted(_unit_forms_regex, key=len, reverse=True)
 
 # Patterns similar to notebook
 pattern_volume = re.compile(r"\b\d+[\.,]?\d*\s?" + _units_group + r"\b", re.IGNORECASE)
-pattern_multipack = re.compile(r"\b\d+\s*[xх*]\s*\d+[\.,]?\d*\s?" + _units_group + r"\b", re.IGNORECASE)
-pattern_percent = re.compile(r"\b\d+[\.,]?\d*\s?(?:%|процент(?:а|ов)?)\b", re.IGNORECASE)
+pattern_multipack = re.compile(
+    r"\b\d+\s*[xх*]\s*\d+[\.,]?\d*\s?" + _units_group + r"\b", re.IGNORECASE
+)
+pattern_percent = re.compile(
+    r"\b\d+[\.,]?\d*\s?(?:%|процент(?:а|ов)?)\b", re.IGNORECASE
+)
 re_nospace_volume = re.compile(r"\d+[\.,]?\d*" + _units_group + r"\b", re.IGNORECASE)
 
 # Auxiliary quality heuristics
@@ -38,10 +50,10 @@ re_mixed = re.compile(r"[а-я]{1,2}[a-z]|[a-z]{1,2}[а-я]", re.IGNORECASE)
 
 def _token_script_stats(text: str) -> Tuple[int, int]:
     """Token script stats.
-    
+
     Args:
         text: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -52,10 +64,10 @@ def _token_script_stats(text: str) -> Tuple[int, int]:
 
 def _normalize_simple_subs(token: str) -> str:
     """Normalize simple subs.
-    
+
     Args:
         token: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -66,7 +78,9 @@ def _normalize_simple_subs(token: str) -> str:
     return out
 
 
-def preprocess_text_with_mapping(text: str, do_lower: bool = True, apply_translit_map: bool = True) -> Tuple[str, List[int]]:
+def preprocess_text_with_mapping(
+    text: str, do_lower: bool = True, apply_translit_map: bool = True
+) -> Tuple[str, List[int]]:
     """
     Lightweight normalization aligned with notebook preprocessing:
     - Replace invisible spaces with regular space
@@ -105,7 +119,9 @@ def preprocess_text_with_mapping(text: str, do_lower: bool = True, apply_transli
     if apply_translit_map:
         # Apply token-level substitutions without changing length
         parts = re.split(r"(\s+)", out_text)
-        for i in range(0, len(parts), 2):  # tokens at even indices; whitespace kept as-is
+        for i in range(
+            0, len(parts), 2
+        ):  # tokens at even indices; whitespace kept as-is
             if i < len(parts):
                 parts[i] = _normalize_simple_subs(parts[i])
         out_text = "".join(parts)
@@ -117,10 +133,10 @@ def preprocess_text_with_mapping(text: str, do_lower: bool = True, apply_transli
 
 def normalize_unit_stem(segment: str) -> str:
     """Normalize unit stem.
-    
+
     Args:
         segment: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -139,24 +155,26 @@ def normalize_unit_stem(segment: str) -> str:
 
 def has_volume_improved(text: str) -> bool:
     """Has volume improved.
-    
+
     Args:
         text: Parameter.
-    
+
     Returns:
         Return value.
     """
     return bool(pattern_volume.search(text) or pattern_multipack.search(text))
 
 
-def _token_tags_to_char_bio(text: str, token_tags: List[str], offsets: List[Tuple[int, int]]) -> List[str]:
+def _token_tags_to_char_bio(
+    text: str, token_tags: List[str], offsets: List[Tuple[int, int]]
+) -> List[str]:
     """Token tags to char bio.
-    
+
     Args:
         text: Parameter.
         token_tags: Parameter.
         offsets: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -179,23 +197,25 @@ def _token_tags_to_char_bio(text: str, token_tags: List[str], offsets: List[Tupl
 
 def _find_word_spans(text: str) -> List[List[int]]:
     """Find word spans.
-    
+
     Args:
         text: Parameter.
-    
+
     Returns:
         Return value.
     """
     return [[m.start(), m.end()] for m in re.finditer(r"\S+", text)]
 
 
-def _extract_spans_from_bio(text: str, bio_labels: List[str]) -> List[Tuple[int, int, str]]:
+def _extract_spans_from_bio(
+    text: str, bio_labels: List[str]
+) -> List[Tuple[int, int, str]]:
     """Extract spans from bio.
-    
+
     Args:
         text: Parameter.
         bio_labels: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -234,14 +254,16 @@ def _extract_spans_from_bio(text: str, bio_labels: List[str]) -> List[Tuple[int,
     return spans
 
 
-def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap: int = 1) -> List[Tuple[int, int, str]]:
+def _merge_adjacent_spans(
+    text: str, spans: List[Tuple[int, int, str]], max_gap: int = 1
+) -> List[Tuple[int, int, str]]:
     """Merge adjacent spans.
-    
+
     Args:
         text: Parameter.
         spans: Parameter.
         max_gap: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -251,21 +273,25 @@ def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap:
             ps, pe, pt = merged[-1]
             gap = s - pe
             between = text[pe:s] if 0 <= pe <= s <= len(text) else ""
-            if gap <= max_gap and (between.strip() == "" or between in ["-", "–", ".", ","]):
+            if gap <= max_gap and (
+                between.strip() == "" or between in ["-", "–", ".", ","]
+            ):
                 merged[-1] = (ps, max(pe, e), pt)
                 continue
         merged.append((s, e, t))
     return merged
 
 
-def _spans_to_api_spans(text: str, spans: List[Tuple[int, int, str]], include_O: bool = False) -> List[Dict[str, Any]]:
+def _spans_to_api_spans(
+    text: str, spans: List[Tuple[int, int, str]], include_O: bool = False
+) -> List[Dict[str, Any]]:
     """Spans to api spans.
-    
+
     Args:
         text: Parameter.
         spans: Parameter.
         include_O: Parameter.
-    
+
     Returns:
         Return value.
     """
