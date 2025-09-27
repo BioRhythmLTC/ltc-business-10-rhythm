@@ -20,7 +20,7 @@ jobs:
             fix
             chore
             docs
-            refactor
+            refactoring
             test
             build
             ci
