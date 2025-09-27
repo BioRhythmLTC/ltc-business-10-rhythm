@@ -3,7 +3,7 @@
 import hashlib
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import torch
 from cachetools import TTLCache
@@ -93,8 +93,9 @@ class ModelManager:
             self.device = self._select_device()
             if self.model is not None:
                 # Do not reassign to preserve precise type information for mypy
-                self.model.to(torch.device(self.device))
-                self.model.eval()
+                m_any = cast(Any, self.model)
+                m_any.to(torch.device(self.device))
+                m_any.eval()
 
             # Load id2label mapping
             if self.model is not None:
