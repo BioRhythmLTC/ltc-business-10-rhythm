@@ -3,7 +3,7 @@
 import hashlib
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from cachetools import TTLCache
