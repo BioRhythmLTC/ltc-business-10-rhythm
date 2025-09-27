@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import sys
-import difflib
 from typing import Any, Dict, List
 
 
@@ -20,17 +20,19 @@ def _load_add_docstrings_impl():
 
         return auto_docstrings.add_docstrings_to_source  # type: ignore[attr-defined]
     except Exception:
+
         def _noop(path: str, source: str) -> str:
             """Noop.
-            
+
             Args:
                 path: Parameter.
                 source: Parameter.
-            
+
             Returns:
                 Return value.
             """
             return source
+
         return _noop
 
 
@@ -39,10 +41,10 @@ add_docstrings_to_source = _load_add_docstrings_impl()
 
 def read_notebook(path: str) -> Dict[str, Any]:
     """Read notebook.
-    
+
     Args:
         path: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -52,11 +54,11 @@ def read_notebook(path: str) -> Dict[str, Any]:
 
 def write_notebook(path: str, nb: Dict[str, Any]) -> None:
     """Write notebook.
-    
+
     Args:
         path: Parameter.
         nb: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -67,10 +69,10 @@ def write_notebook(path: str, nb: Dict[str, Any]) -> None:
 
 def cell_source_to_text(src: Any) -> str:
     """Cell source to text.
-    
+
     Args:
         src: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -84,10 +86,10 @@ def cell_source_to_text(src: Any) -> str:
 def text_to_cell_source(text: str) -> List[str]:
     # Store as list of lines to match common Jupyter formatting
     """Text to cell source.
-    
+
     Args:
         text: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -96,10 +98,10 @@ def text_to_cell_source(text: str) -> List[str]:
 
 def process_notebook(path: str) -> int:
     """Process notebook.
-    
+
     Args:
         path: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -126,10 +128,10 @@ def process_notebook(path: str) -> int:
 
 def dry_run_notebook(path: str) -> int:
     """Dry run notebook.
-    
+
     Args:
         path: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -150,20 +152,29 @@ def dry_run_notebook(path: str) -> int:
             changed += 1
             a = src_text.splitlines(keepends=True)
             b = updated.splitlines(keepends=True)
-            diff = difflib.unified_diff(a, b, fromfile=f"{path}::cell{idx} (orig)", tofile=f"{path}::cell{idx} (new)")
+            diff = difflib.unified_diff(
+                a,
+                b,
+                fromfile=f"{path}::cell{idx} (orig)",
+                tofile=f"{path}::cell{idx} (new)",
+            )
             sys.stdout.write("".join(diff))
     return changed
 
 
 def main() -> None:
     """Main.
-    
+
     Returns:
         Return value.
     """
-    p = argparse.ArgumentParser(description="Auto-add English docstrings to Python functions/classes inside .ipynb code cells.")
+    p = argparse.ArgumentParser(
+        description="Auto-add English docstrings to Python functions/classes inside .ipynb code cells."
+    )
     p.add_argument("notebooks", nargs="+", help="Notebook paths to process (.ipynb)")
-    p.add_argument("--write", action="store_true", help="Write changes in place (default: dry-run)")
+    p.add_argument(
+        "--write", action="store_true", help="Write changes in place (default: dry-run)"
+    )
     args = p.parse_args()
 
     total_changed = 0
@@ -187,5 +198,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

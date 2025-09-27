@@ -3,7 +3,8 @@ uvicorn==0.36.0
 gunicorn==21.2.0
 transformers==4.56.2
 tokenizers==0.22.1
-torch==2.8.0
+torch==2.2.2
 safetensors==0.6.2
 huggingface-hub==0.35.0
 pydantic==2.11.9
+cachetools==5.3.2

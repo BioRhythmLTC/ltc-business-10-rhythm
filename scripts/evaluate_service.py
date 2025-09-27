@@ -29,11 +29,10 @@ import csv
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import requests
 from tqdm import tqdm
-
 
 # ==========================
 # Data structures
@@ -42,8 +41,8 @@ from tqdm import tqdm
 
 @dataclass(frozen=True)
 class Span:
-    """Span.
-    """
+    """Span."""
+
     start: int
     end: int  # exclusive
     tag: str  # e.g., "B-TYPE", "I-BRAND"
@@ -52,10 +51,10 @@ class Span:
     def entity_type(self) -> str:
         # Convert "B-TYPE" or "I-TYPE" → "TYPE". If no dash, return as is.
         """Entity type.
-        
+
         Args:
             self: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -108,10 +107,10 @@ def normalize_predicted(pred: Sequence[Dict[str, Any]]) -> List[Span]:
 
 def spans_to_jsonable(spans: Sequence[Span]) -> List[Dict[str, Any]]:
     """Spans to jsonable.
-    
+
     Args:
         spans: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -125,8 +124,8 @@ def spans_to_jsonable(spans: Sequence[Span]) -> List[Dict[str, Any]]:
 
 @dataclass
 class RowMetrics:
-    """Rowmetrics.
-    """
+    """Rowmetrics."""
+
     true_positives: int
     false_positives: int
     false_negatives: int
@@ -135,11 +134,11 @@ class RowMetrics:
 
 def compute_row_metrics(gold: Sequence[Span], pred: Sequence[Span]) -> RowMetrics:
     """Compute row metrics.
-    
+
     Args:
         gold: Parameter.
         pred: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -149,16 +148,18 @@ def compute_row_metrics(gold: Sequence[Span], pred: Sequence[Span]) -> RowMetric
     fp = len(pred_set - gold_set)
     fn = len(gold_set - pred_set)
     exact = gold_set == pred_set
-    return RowMetrics(true_positives=tp, false_positives=fp, false_negatives=fn, exact_match=exact)
+    return RowMetrics(
+        true_positives=tp, false_positives=fp, false_negatives=fn, exact_match=exact
+    )
 
 
 def safe_div(n: float, d: float) -> float:
     """Safe div.
-    
+
     Args:
         n: Parameter.
         d: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -167,8 +168,8 @@ def safe_div(n: float, d: float) -> float:
 
 @dataclass
 class GlobalMetrics:
-    """Globalmetrics.
-    """
+    """Globalmetrics."""
+
     true_positives: int
     false_positives: int
     false_negatives: int
@@ -181,10 +182,10 @@ class GlobalMetrics:
 
 def aggregate_metrics(rows: Sequence[RowMetrics]) -> GlobalMetrics:
     """Aggregate metrics.
-    
+
     Args:
         rows: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -193,7 +194,11 @@ def aggregate_metrics(rows: Sequence[RowMetrics]) -> GlobalMetrics:
     fn = sum(r.false_negatives for r in rows)
     precision = safe_div(tp, tp + fp)
     recall = safe_div(tp, tp + fn)
-    f1 = safe_div(2 * precision * recall, precision + recall) if (precision + recall) else 0.0
+    f1 = (
+        safe_div(2 * precision * recall, precision + recall)
+        if (precision + recall)
+        else 0.0
+    )
     exact = sum(1 for r in rows if r.exact_match)
     return GlobalMetrics(
         true_positives=tp,
@@ -212,7 +217,9 @@ def aggregate_metrics(rows: Sequence[RowMetrics]) -> GlobalMetrics:
 # ==========================
 
 
-def build_char_labels(text: str, spans: Sequence[Span], key: str) -> List[Optional[str]]:
+def build_char_labels(
+    text: str, spans: Sequence[Span], key: str
+) -> List[Optional[str]]:
     """Return per-character labels for given spans.
     key is a namespace string, e.g., "gold:TYPE" or "pred:TYPE".
     If overlapping spans occur, later spans overwrite earlier labels.
@@ -228,20 +235,20 @@ def build_char_labels(text: str, spans: Sequence[Span], key: str) -> List[Option
 
 def highlight_text(text: str, gold: Sequence[Span], pred: Sequence[Span]) -> str:
     """Produce HTML highlighting:
-      - True positive (same entity type overlap): green
-      - False positive (pred only): red
-      - False negative (gold only): yellow
-      - Mismatch (both but different types): purple
+    - True positive (same entity type overlap): green
+    - False positive (pred only): red
+    - False negative (gold only): yellow
+    - Mismatch (both but different types): purple
     """
     gold_labels = build_char_labels(text, gold, key="gold")
     pred_labels = build_char_labels(text, pred, key="pred")
 
     def classify(i: int) -> str:
         """Classify.
-        
+
         Args:
             i: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -278,11 +285,11 @@ def highlight_text(text: str, gold: Sequence[Span], pred: Sequence[Span]) -> str
 
 def _wrap_segment(segment: str, klass: str) -> str:
     """Wrap segment.
-    
+
     Args:
         segment: Parameter.
         klass: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -293,10 +300,10 @@ def _wrap_segment(segment: str, klass: str) -> str:
 
 def escape_html(s: str) -> str:
     """Escape html.
-    
+
     Args:
         s: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -315,12 +322,12 @@ def render_html_report(
     metrics: GlobalMetrics,
 ) -> None:
     """Render html report.
-    
+
     Args:
         output_path: Parameter.
         rows: Parameter.
         metrics: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -350,10 +357,10 @@ def render_html_report(
 
     def fmt_pct(x: float) -> str:
         """Fmt pct.
-        
+
         Args:
             x: Parameter.
-        
+
         Returns:
             Return value.
         """
@@ -389,7 +396,9 @@ def render_html_report(
                 query=escape_html(r.get("query", "")),
                 highlight=r.get("highlight_html", ""),
                 gold=escape_html(json.dumps(r.get("expected", []), ensure_ascii=False)),
-                pred=escape_html(json.dumps(r.get("predicted", []), ensure_ascii=False)),
+                pred=escape_html(
+                    json.dumps(r.get("predicted", []), ensure_ascii=False)
+                ),
             )
         )
 
@@ -520,11 +529,11 @@ def render_html_report(
 
 def chunked(seq: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
     """Chunked.
-    
+
     Args:
         seq: Parameter.
         size: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -532,13 +541,15 @@ def chunked(seq: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
         yield seq[i : i + size]
 
 
-def call_predict_batch(base_url: str, texts: Sequence[str]) -> List[List[Dict[str, Any]]]:
+def call_predict_batch(
+    base_url: str, texts: Sequence[str]
+) -> List[List[Dict[str, Any]]]:
     """Call predict batch.
-    
+
     Args:
         base_url: Parameter.
         texts: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -553,11 +564,11 @@ def call_predict_batch(base_url: str, texts: Sequence[str]) -> List[List[Dict[st
 
 def call_predict_single(base_url: str, text: str) -> List[Dict[str, Any]]:
     """Call predict single.
-    
+
     Args:
         base_url: Parameter.
         text: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -582,13 +593,13 @@ def evaluate(
     batch_size: int = 32,
 ) -> None:
     """Evaluate.
-    
+
     Args:
         input_csv: Parameter.
         output_dir: Parameter.
         base_url: Parameter.
         batch_size: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -706,7 +717,9 @@ def evaluate(
     print(f"Precision: {global_metrics.precision:.4f}")
     print(f"Recall:    {global_metrics.recall:.4f}")
     print(f"F1:        {global_metrics.f1:.4f}")
-    print(f"Exact rows: {global_metrics.exact_match_count} / {global_metrics.total_rows}")
+    print(
+        f"Exact rows: {global_metrics.exact_match_count} / {global_metrics.total_rows}"
+    )
     print(f"CSV:  {out_csv_path}")
     print(f"HTML: {out_html_path}")
     print(f"JSON: {out_stats_path}")
@@ -714,25 +727,29 @@ def evaluate(
 
 def build_argparser() -> argparse.ArgumentParser:
     """Build argparser.
-    
+
     Returns:
         Return value.
     """
     p = argparse.ArgumentParser(description="Evaluate NER service on CSV annotations")
-    p.add_argument("--input", required=True, help="Path to input CSV (semicolon-separated)")
+    p.add_argument(
+        "--input", required=True, help="Path to input CSV (semicolon-separated)"
+    )
     p.add_argument("--output_dir", required=True, help="Directory to write outputs")
     p.add_argument(
         "--base_url",
         default="http://localhost:8080",
         help="Service base URL (default: http://localhost:8080)",
     )
-    p.add_argument("--batch_size", type=int, default=32, help="Batch size for predict_batch calls")
+    p.add_argument(
+        "--batch_size", type=int, default=32, help="Batch size for predict_batch calls"
+    )
     return p
 
 
 def main() -> None:
     """Main.
-    
+
     Returns:
         Return value.
     """

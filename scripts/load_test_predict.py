@@ -19,17 +19,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
+import csv
+import os
 import random
 import statistics
 import time
-from typing import List, Tuple
-import csv
-import os
 from dataclasses import dataclass
+from typing import List
 
 import aiohttp
-
 
 DEFAULT_CSV = os.environ.get(
     "LOADTEST_INPUT",
@@ -39,23 +37,25 @@ DEFAULT_CSV = os.environ.get(
 
 @dataclass
 class RequestResult:
-    """Requestresult.
-    """
+    """Requestresult."""
+
     ok: bool
     latency_s: float
     http_status: int
     query: str
 
 
-async def one_request(session: aiohttp.ClientSession, url: str, query: str, timeout_s: float) -> RequestResult:
+async def one_request(
+    session: aiohttp.ClientSession, url: str, query: str, timeout_s: float
+) -> RequestResult:
     """One request.
-    
+
     Args:
         session: Parameter.
         url: Parameter.
         query: Parameter.
         timeout_s: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -64,7 +64,12 @@ async def one_request(session: aiohttp.ClientSession, url: str, query: str, time
         async with session.post(url, json={"input": query}, timeout=timeout_s) as resp:
             _ = await resp.json()
             dt = time.perf_counter() - t0
-            return RequestResult(ok=(resp.status == 200), latency_s=dt, http_status=resp.status, query=query)
+            return RequestResult(
+                ok=(resp.status == 200),
+                latency_s=dt,
+                http_status=resp.status,
+                query=query,
+            )
     except Exception:
         dt = time.perf_counter() - t0
         return RequestResult(ok=False, latency_s=dt, http_status=0, query=query)
@@ -77,20 +82,22 @@ async def one_request_batch(
     timeout_s: float,
 ) -> RequestResult:
     """One request batch.
-    
+
     Args:
         session: Parameter.
         url: Parameter.
         queries: Parameter.
         timeout_s: Parameter.
-    
+
     Returns:
         Return value.
     """
     t0 = time.perf_counter()
     payload_desc = f"[batch_size={len(queries)}]"
     try:
-        async with session.post(url, json={"inputs": queries}, timeout=timeout_s) as resp:
+        async with session.post(
+            url, json={"inputs": queries}, timeout=timeout_s
+        ) as resp:
             _ = await resp.json()
             dt = time.perf_counter() - t0
             return RequestResult(
@@ -111,13 +118,13 @@ async def client_worker(
     batch_size: int,
 ) -> List[RequestResult]:
     """Client worker.
-    
+
     Args:
         base_url: Parameter.
         requests_per_client: Parameter.
         timeout_s: Parameter.
         batch_size: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -128,7 +135,10 @@ async def client_worker(
         results: List[RequestResult] = []
         for _ in range(requests_per_client):
             if use_batch:
-                batch = [random.choice(GLOBAL_QUERIES) for _ in range(max(1, int(batch_size)))]
+                batch = [
+                    random.choice(GLOBAL_QUERIES)
+                    for _ in range(max(1, int(batch_size)))
+                ]
                 results.append(await one_request_batch(session, url, batch, timeout_s))
             else:
                 q = random.choice(GLOBAL_QUERIES)
@@ -138,11 +148,11 @@ async def client_worker(
 
 def percentile(values: List[float], p: float) -> float:
     """Percentile.
-    
+
     Args:
         values: Parameter.
         p: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -158,10 +168,10 @@ def percentile(values: List[float], p: float) -> float:
 
 def load_queries_from_csv(path: str) -> List[str]:
     """Load queries from csv.
-    
+
     Args:
         path: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -179,11 +189,11 @@ def load_queries_from_csv(path: str) -> List[str]:
 
 def write_log(path: str, results: List[RequestResult]) -> None:
     """Write log.
-    
+
     Args:
         path: Parameter.
         results: Parameter.
-    
+
     Returns:
         Return value.
     """
@@ -204,7 +214,7 @@ async def run_load(
     batch_size: int,
 ):
     """Run load.
-    
+
     Args:
         base_url: Parameter.
         concurrency: Parameter.
@@ -214,7 +224,9 @@ async def run_load(
         batch_size: Parameter.
     """
     tasks = [
-        asyncio.create_task(client_worker(base_url, requests_per_client, timeout_s, batch_size))
+        asyncio.create_task(
+            client_worker(base_url, requests_per_client, timeout_s, batch_size)
+        )
         for _ in range(concurrency)
     ]
     all_results: List[RequestResult] = []
@@ -222,7 +234,6 @@ async def run_load(
         all_results.extend(await t)
 
     successes = [r.latency_s for r in all_results if r.ok]
-    failures = [r.latency_s for r in all_results if not r.ok]
     total = len(all_results)
     ok_count = len(successes)
     fail_count = total - ok_count
@@ -237,7 +248,9 @@ async def run_load(
 
     print("=== Load Test Results ===")
     print(f"Total: {total}  Success: {ok_count}  Fail: {fail_count}")
-    print(f"Latency (s) -> avg: {avg:.3f}  p50: {p50:.3f}  p90: {p90:.3f}  p95: {p95:.3f}  p99: {p99:.3f}  max: {mx:.3f}")
+    print(
+        f"Latency (s) -> avg: {avg:.3f}  p50: {p50:.3f}  p90: {p90:.3f}  p95: {p95:.3f}  p99: {p99:.3f}  max: {mx:.3f}"
+    )
     sla_ok = (p95 <= timeout_s) and (mx <= timeout_s)
     print(f"SLA (<= {timeout_s:.3f}s) p95 & max: {'PASS' if sla_ok else 'FAIL'}")
     if log_path:
@@ -247,18 +260,29 @@ async def run_load(
 
 def main() -> None:
     """Main.
-    
+
     Returns:
         Return value.
     """
     ap = argparse.ArgumentParser(description="Async load test for /api/predict")
     ap.add_argument("--base_url", default="http://localhost:8000")
-    ap.add_argument("--input", default=DEFAULT_CSV, help="CSV with column 'search_query'")
+    ap.add_argument(
+        "--input", default=DEFAULT_CSV, help="CSV with column 'search_query'"
+    )
     ap.add_argument("--concurrency", type=int, default=100)
     ap.add_argument("--requests-per-client", type=int, default=50)
-    ap.add_argument("--timeout", type=float, default=1.0, help="SLA threshold in seconds")
-    ap.add_argument("--log_requests", default="", help="Optional CSV path to save all sent requests")
-    ap.add_argument("--batch-size", type=int, default=1, help="Number of inputs per HTTP request; >1 uses /api/predict_batch")
+    ap.add_argument(
+        "--timeout", type=float, default=1.0, help="SLA threshold in seconds"
+    )
+    ap.add_argument(
+        "--log_requests", default="", help="Optional CSV path to save all sent requests"
+    )
+    ap.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="Number of inputs per HTTP request; >1 uses /api/predict_batch",
+    )
     args = ap.parse_args()
 
     global GLOBAL_QUERIES

@@ -27,5 +27,10 @@ Copy these into a local `.env` (do not commit real `.env`). Values below are saf
 - DISABLE_WARMUP: `false`
 - ALLOW_MPS_WARMUP: `false`
 
+## Cache configuration
+- CACHE_ENABLED: `true`
+- CACHE_MAX_SIZE: `1000`
+- CACHE_TTL_SECONDS: `3600`
+
 ## Third-party integrations (configure via CI/CD secrets, not committed)
 - SENTRY_DSN: ``

@@ -1,9 +1,7 @@
-import pytest
-
 from service.utils import (
-    _token_tags_to_char_bio,
     _extract_spans_from_bio,
     _spans_to_api_spans,
+    _token_tags_to_char_bio,
 )
 
 

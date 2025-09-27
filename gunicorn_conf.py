@@ -37,5 +37,3 @@ raw_env = [
     f"OMP_NUM_THREADS={os.getenv('OMP_NUM_THREADS', '1')}",
     f"MKL_NUM_THREADS={os.getenv('MKL_NUM_THREADS', '1')}",
 ]
-
-
