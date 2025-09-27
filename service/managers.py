@@ -86,14 +86,18 @@ class ModelManager:
             )
 
             self.device = self._select_device()
-            self.model = self.model.to(self.device).eval()
+            if self.model is not None:
+                self.model = self.model.to(self.device).eval()
 
             # Load id2label mapping
-            id2label = getattr(self.model.config, "id2label", None)
-            if not isinstance(id2label, dict):
-                num_labels = getattr(self.model.config, "num_labels", 0)
-                id2label = {i: str(i) for i in range(num_labels)}
-                logger.warning("No id2label found in config, using default mapping")
+            if self.model is not None:
+                id2label = getattr(self.model.config, "id2label", None)
+                if not isinstance(id2label, dict):
+                    num_labels = getattr(self.model.config, "num_labels", 0)
+                    id2label = {i: str(i) for i in range(num_labels)}
+                    logger.warning("No id2label found in config, using default mapping")
+            else:
+                id2label = {}
 
             self.id2label = {int(k): v for k, v in id2label.items()}
             self._loaded = True
@@ -151,7 +155,8 @@ class ModelManager:
                 # Get predictions
                 if self.model is None:
                     raise RuntimeError("Model not loaded")
-                logits = self.model(**inputs).logits
+                outputs = self.model(**inputs)
+                logits = outputs.logits
                 pred_ids = logits.argmax(-1)[0].tolist()
 
                 # Convert to labels
@@ -184,7 +189,9 @@ class ModelManager:
             Label string.
         """
         # Try config mapping first
-        cfg_map = getattr(self.model.config, "id2label", None) if self.model else None
+        cfg_map = None
+        if self.model is not None and hasattr(self.model, 'config'):
+            cfg_map = getattr(self.model.config, "id2label", None)
         if isinstance(cfg_map, dict):
             result = cfg_map.get(
                 token_id, cfg_map.get(str(token_id), self.id2label.get(token_id, "O"))

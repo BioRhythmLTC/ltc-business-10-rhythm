@@ -14,7 +14,7 @@ class PredictRequest(BaseModel):
 class PredictBatchRequest(BaseModel):
     """Request model for batch prediction."""
 
-    inputs: List[str] = Field(..., description="List of texts to analyze", min_items=1)
+    inputs: List[str] = Field(..., description="List of texts to analyze", min_length=1)
 
 
 class HealthResponse(BaseModel):
