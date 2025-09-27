@@ -23,6 +23,11 @@ ART_DIR = os.path.abspath(ART_DIR)
 
 def _select_device() -> str:
     # Allow environment override to avoid unstable backends (e.g., macOS MPS)
+    """Select device.
+    
+    Returns:
+        Return value.
+    """
     forced = os.environ.get("X5_FORCE_DEVICE") or os.environ.get("FORCE_DEVICE")
     if forced:
         f = forced.strip().lower()
@@ -36,6 +41,11 @@ def _select_device() -> str:
 
 
 def _load_artifacts(art_dir: str):
+    """Load artifacts.
+    
+    Args:
+        art_dir: Parameter.
+    """
     tokenizer = AutoTokenizer.from_pretrained(art_dir)
     model = AutoModelForTokenClassification.from_pretrained(art_dir)
     device = _select_device()
@@ -54,6 +64,11 @@ DEVICE = _select_device()
 ID2LABEL: Dict[int, str] = {}
 
 def _ensure_loaded() -> Tuple[Any, Any, str, Dict[int, str]]:
+    """Ensure loaded.
+    
+    Returns:
+        Return value.
+    """
     global MODEL, TOKENIZER, DEVICE, ID2LABEL
     if MODEL is None or TOKENIZER is None or not ID2LABEL:
         MODEL, TOKENIZER, DEVICE, ID2LABEL = _load_artifacts(ART_DIR)
@@ -83,10 +98,27 @@ def _token_tags_to_char_bio(text: str, token_tags: List[str], offsets: List[Tupl
 
 
 def _find_word_spans(text: str) -> List[List[int]]:
+    """Find word spans.
+    
+    Args:
+        text: Parameter.
+    
+    Returns:
+        Return value.
+    """
     return [[m.start(), m.end()] for m in re.finditer(r"\S+", text)]
 
 
 def _extract_spans_from_bio(text: str, bio_labels: List[str]) -> List[Tuple[int, int, str]]:
+    """Extract spans from bio.
+    
+    Args:
+        text: Parameter.
+        bio_labels: Parameter.
+    
+    Returns:
+        Return value.
+    """
     n = len(text)
     if len(bio_labels) != n:
         bio_labels = (bio_labels + ["O"] * n)[:n]
@@ -122,6 +154,16 @@ def _extract_spans_from_bio(text: str, bio_labels: List[str]) -> List[Tuple[int,
     return spans
 
 def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap: int = 1) -> List[Tuple[int, int, str]]:
+    """Merge adjacent spans.
+    
+    Args:
+        text: Parameter.
+        spans: Parameter.
+        max_gap: Parameter.
+    
+    Returns:
+        Return value.
+    """
     merged: List[Tuple[int, int, str]] = []
     for s, e, t in sorted(spans, key=lambda x: (x[0], x[1])):
         if merged and merged[-1][2] == t:
@@ -135,6 +177,16 @@ def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap:
     return merged
 
 def _spans_to_api_spans(text: str, spans: List[Tuple[int, int, str]], include_O: bool = False) -> List[Dict[str, Any]]:
+    """Spans to api spans.
+    
+    Args:
+        text: Parameter.
+        spans: Parameter.
+        include_O: Parameter.
+    
+    Returns:
+        Return value.
+    """
     merged = _merge_adjacent_spans(text, spans)
     words = _find_word_spans(text)
     # Build mapping from word span to tag; default to O if include_O enabled
@@ -157,6 +209,14 @@ def _spans_to_api_spans(text: str, spans: List[Tuple[int, int, str]], include_O:
 
 
 def predict_api_spans(text: str) -> List[Dict[str, Any]]:
+    """Predict api spans.
+    
+    Args:
+        text: Parameter.
+    
+    Returns:
+        Return value.
+    """
     model, tokenizer, device, id2label_map = _ensure_loaded()
     # Apply the same lightweight preprocessing as in the notebook pipeline
     # Length is preserved 1:1, so indices remain valid
@@ -172,6 +232,14 @@ def predict_api_spans(text: str) -> List[Dict[str, Any]]:
         # Use model.config.id2label when available for perfect parity
         cfg_map = getattr(model.config, "id2label", None)
         def _id2label(i: int) -> str:
+            """Id2label.
+            
+            Args:
+                i: Parameter.
+            
+            Returns:
+                Return value.
+            """
             if isinstance(cfg_map, dict):
                 return cfg_map.get(i, cfg_map.get(str(i), id2label_map.get(i, "O")))
             return id2label_map.get(i, "O")
@@ -186,10 +254,14 @@ def predict_api_spans(text: str) -> List[Dict[str, Any]]:
 
 
 class PredictRequest(BaseModel):
+    """Predictrequest.
+    """
     input: str
 
 
 class PredictBatchRequest(BaseModel):
+    """Predictbatchrequest.
+    """
     inputs: List[str]
 
 
@@ -199,6 +271,11 @@ app = FastAPI(title="X5 NER Service", version="1.0.0")
 @app.on_event("startup")
 async def _warmup() -> None:
     # Optional warmup; can be disabled or limited to CPU via env
+    """Warmup.
+    
+    Returns:
+        Return value.
+    """
     if str(os.environ.get("DISABLE_WARMUP", "")).lower() in {"1", "true", "yes"}:
         return
     # Skip MPS warmup by default due to stability issues; override to enable
@@ -212,16 +289,37 @@ async def _warmup() -> None:
 
 @app.get("/health")
 def health() -> Dict[str, str]:
+    """Health.
+    
+    Returns:
+        Return value.
+    """
     return {"status": "ok", "device": DEVICE, "artifacts": ART_DIR}
 
 
 @app.post("/api/predict")
 async def predict(req: PredictRequest) -> List[Dict[str, Any]]:
+    """Predict.
+    
+    Args:
+        req: Parameter.
+    
+    Returns:
+        Return value.
+    """
     return await asyncio.to_thread(predict_api_spans, req.input)
 
 
 @app.post("/api/predict_batch")
 async def predict_batch(req: PredictBatchRequest) -> List[List[Dict[str, Any]]]:
+    """Predict batch.
+    
+    Args:
+        req: Parameter.
+    
+    Returns:
+        Return value.
+    """
     tasks = [asyncio.to_thread(predict_api_spans, text) for text in req.inputs]
     return await asyncio.gather(*tasks)
 

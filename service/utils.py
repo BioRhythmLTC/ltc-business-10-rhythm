@@ -37,12 +37,28 @@ re_mixed = re.compile(r"[а-я]{1,2}[a-z]|[a-z]{1,2}[а-я]", re.IGNORECASE)
 
 
 def _token_script_stats(text: str) -> Tuple[int, int]:
+    """Token script stats.
+    
+    Args:
+        text: Parameter.
+    
+    Returns:
+        Return value.
+    """
     lat = len(_lat.findall(text))
     cyr = len(_cyr.findall(text))
     return lat, cyr
 
 
 def _normalize_simple_subs(token: str) -> str:
+    """Normalize simple subs.
+    
+    Args:
+        token: Parameter.
+    
+    Returns:
+        Return value.
+    """
     out = token.replace("ё", "е")
     lat, cyr = _token_script_stats(out)
     if lat > cyr:
@@ -100,6 +116,14 @@ def preprocess_text_with_mapping(text: str, do_lower: bool = True, apply_transli
 
 
 def normalize_unit_stem(segment: str) -> str:
+    """Normalize unit stem.
+    
+    Args:
+        segment: Parameter.
+    
+    Returns:
+        Return value.
+    """
     if re.search(r"миллилитр|\bмл\.?\b|\bml\b", segment, re.IGNORECASE):
         return "ML"
     if re.search(r"литр|\bл\.?\b|\bl\b", segment, re.IGNORECASE):
@@ -114,10 +138,28 @@ def normalize_unit_stem(segment: str) -> str:
 
 
 def has_volume_improved(text: str) -> bool:
+    """Has volume improved.
+    
+    Args:
+        text: Parameter.
+    
+    Returns:
+        Return value.
+    """
     return bool(pattern_volume.search(text) or pattern_multipack.search(text))
 
 
 def _token_tags_to_char_bio(text: str, token_tags: List[str], offsets: List[Tuple[int, int]]) -> List[str]:
+    """Token tags to char bio.
+    
+    Args:
+        text: Parameter.
+        token_tags: Parameter.
+        offsets: Parameter.
+    
+    Returns:
+        Return value.
+    """
     text_len = max([e for (s, e) in offsets if e is not None], default=0)
     char_bio = ["O"] * text_len
     for (s, e), tag in zip(offsets, token_tags):
@@ -136,10 +178,27 @@ def _token_tags_to_char_bio(text: str, token_tags: List[str], offsets: List[Tupl
 
 
 def _find_word_spans(text: str) -> List[List[int]]:
+    """Find word spans.
+    
+    Args:
+        text: Parameter.
+    
+    Returns:
+        Return value.
+    """
     return [[m.start(), m.end()] for m in re.finditer(r"\S+", text)]
 
 
 def _extract_spans_from_bio(text: str, bio_labels: List[str]) -> List[Tuple[int, int, str]]:
+    """Extract spans from bio.
+    
+    Args:
+        text: Parameter.
+        bio_labels: Parameter.
+    
+    Returns:
+        Return value.
+    """
     n = len(text)
     if len(bio_labels) != n:
         bio_labels = (bio_labels + ["O"] * n)[:n]
@@ -176,6 +235,16 @@ def _extract_spans_from_bio(text: str, bio_labels: List[str]) -> List[Tuple[int,
 
 
 def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap: int = 1) -> List[Tuple[int, int, str]]:
+    """Merge adjacent spans.
+    
+    Args:
+        text: Parameter.
+        spans: Parameter.
+        max_gap: Parameter.
+    
+    Returns:
+        Return value.
+    """
     merged: List[Tuple[int, int, str]] = []
     for s, e, t in sorted(spans, key=lambda x: (x[0], x[1])):
         if merged and merged[-1][2] == t:
@@ -190,6 +259,16 @@ def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap:
 
 
 def _spans_to_api_spans(text: str, spans: List[Tuple[int, int, str]], include_O: bool = False) -> List[Dict[str, Any]]:
+    """Spans to api spans.
+    
+    Args:
+        text: Parameter.
+        spans: Parameter.
+        include_O: Parameter.
+    
+    Returns:
+        Return value.
+    """
     merged = _merge_adjacent_spans(text, spans)
     words = _find_word_spans(text)
     # Build mapping from word span to tag; default to O if include_O enabled

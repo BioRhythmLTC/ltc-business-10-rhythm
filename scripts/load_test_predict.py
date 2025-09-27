@@ -39,6 +39,8 @@ DEFAULT_CSV = os.environ.get(
 
 @dataclass
 class RequestResult:
+    """Requestresult.
+    """
     ok: bool
     latency_s: float
     http_status: int
@@ -46,6 +48,17 @@ class RequestResult:
 
 
 async def one_request(session: aiohttp.ClientSession, url: str, query: str, timeout_s: float) -> RequestResult:
+    """One request.
+    
+    Args:
+        session: Parameter.
+        url: Parameter.
+        query: Parameter.
+        timeout_s: Parameter.
+    
+    Returns:
+        Return value.
+    """
     t0 = time.perf_counter()
     try:
         async with session.post(url, json={"input": query}, timeout=timeout_s) as resp:
@@ -63,6 +76,17 @@ async def one_request_batch(
     queries: List[str],
     timeout_s: float,
 ) -> RequestResult:
+    """One request batch.
+    
+    Args:
+        session: Parameter.
+        url: Parameter.
+        queries: Parameter.
+        timeout_s: Parameter.
+    
+    Returns:
+        Return value.
+    """
     t0 = time.perf_counter()
     payload_desc = f"[batch_size={len(queries)}]"
     try:
@@ -86,6 +110,17 @@ async def client_worker(
     timeout_s: float,
     batch_size: int,
 ) -> List[RequestResult]:
+    """Client worker.
+    
+    Args:
+        base_url: Parameter.
+        requests_per_client: Parameter.
+        timeout_s: Parameter.
+        batch_size: Parameter.
+    
+    Returns:
+        Return value.
+    """
     use_batch = max(1, int(batch_size)) > 1
     url = base_url.rstrip("/") + ("/api/predict_batch" if use_batch else "/api/predict")
     connector = aiohttp.TCPConnector(limit=0, ssl=False)
@@ -102,6 +137,15 @@ async def client_worker(
 
 
 def percentile(values: List[float], p: float) -> float:
+    """Percentile.
+    
+    Args:
+        values: Parameter.
+        p: Parameter.
+    
+    Returns:
+        Return value.
+    """
     if not values:
         return 0.0
     k = (len(values) - 1) * p
@@ -113,6 +157,14 @@ def percentile(values: List[float], p: float) -> float:
 
 
 def load_queries_from_csv(path: str) -> List[str]:
+    """Load queries from csv.
+    
+    Args:
+        path: Parameter.
+    
+    Returns:
+        Return value.
+    """
     if not os.path.isfile(path):
         return []
     queries: List[str] = []
@@ -126,6 +178,15 @@ def load_queries_from_csv(path: str) -> List[str]:
 
 
 def write_log(path: str, results: List[RequestResult]) -> None:
+    """Write log.
+    
+    Args:
+        path: Parameter.
+        results: Parameter.
+    
+    Returns:
+        Return value.
+    """
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
@@ -142,6 +203,16 @@ async def run_load(
     log_path: str | None,
     batch_size: int,
 ):
+    """Run load.
+    
+    Args:
+        base_url: Parameter.
+        concurrency: Parameter.
+        requests_per_client: Parameter.
+        timeout_s: Parameter.
+        log_path: Parameter.
+        batch_size: Parameter.
+    """
     tasks = [
         asyncio.create_task(client_worker(base_url, requests_per_client, timeout_s, batch_size))
         for _ in range(concurrency)
@@ -175,6 +246,11 @@ async def run_load(
 
 
 def main() -> None:
+    """Main.
+    
+    Returns:
+        Return value.
+    """
     ap = argparse.ArgumentParser(description="Async load test for /api/predict")
     ap.add_argument("--base_url", default="http://localhost:8000")
     ap.add_argument("--input", default=DEFAULT_CSV, help="CSV with column 'search_query'")

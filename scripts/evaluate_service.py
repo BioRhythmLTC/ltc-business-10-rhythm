@@ -42,6 +42,8 @@ from tqdm import tqdm
 
 @dataclass(frozen=True)
 class Span:
+    """Span.
+    """
     start: int
     end: int  # exclusive
     tag: str  # e.g., "B-TYPE", "I-BRAND"
@@ -49,6 +51,14 @@ class Span:
     @property
     def entity_type(self) -> str:
         # Convert "B-TYPE" or "I-TYPE" → "TYPE". If no dash, return as is.
+        """Entity type.
+        
+        Args:
+            self: Parameter.
+        
+        Returns:
+            Return value.
+        """
         if "-" in self.tag:
             return self.tag.split("-", 1)[1]
         return self.tag
@@ -97,6 +107,14 @@ def normalize_predicted(pred: Sequence[Dict[str, Any]]) -> List[Span]:
 
 
 def spans_to_jsonable(spans: Sequence[Span]) -> List[Dict[str, Any]]:
+    """Spans to jsonable.
+    
+    Args:
+        spans: Parameter.
+    
+    Returns:
+        Return value.
+    """
     return [{"start": s.start, "end": s.end, "tag": s.tag} for s in spans]
 
 
@@ -107,6 +125,8 @@ def spans_to_jsonable(spans: Sequence[Span]) -> List[Dict[str, Any]]:
 
 @dataclass
 class RowMetrics:
+    """Rowmetrics.
+    """
     true_positives: int
     false_positives: int
     false_negatives: int
@@ -114,6 +134,15 @@ class RowMetrics:
 
 
 def compute_row_metrics(gold: Sequence[Span], pred: Sequence[Span]) -> RowMetrics:
+    """Compute row metrics.
+    
+    Args:
+        gold: Parameter.
+        pred: Parameter.
+    
+    Returns:
+        Return value.
+    """
     gold_set = {(s.start, s.end, s.tag) for s in gold}
     pred_set = {(s.start, s.end, s.tag) for s in pred}
     tp = len(gold_set & pred_set)
@@ -124,11 +153,22 @@ def compute_row_metrics(gold: Sequence[Span], pred: Sequence[Span]) -> RowMetric
 
 
 def safe_div(n: float, d: float) -> float:
+    """Safe div.
+    
+    Args:
+        n: Parameter.
+        d: Parameter.
+    
+    Returns:
+        Return value.
+    """
     return (n / d) if d else 0.0
 
 
 @dataclass
 class GlobalMetrics:
+    """Globalmetrics.
+    """
     true_positives: int
     false_positives: int
     false_negatives: int
@@ -140,6 +180,14 @@ class GlobalMetrics:
 
 
 def aggregate_metrics(rows: Sequence[RowMetrics]) -> GlobalMetrics:
+    """Aggregate metrics.
+    
+    Args:
+        rows: Parameter.
+    
+    Returns:
+        Return value.
+    """
     tp = sum(r.true_positives for r in rows)
     fp = sum(r.false_positives for r in rows)
     fn = sum(r.false_negatives for r in rows)
@@ -189,6 +237,14 @@ def highlight_text(text: str, gold: Sequence[Span], pred: Sequence[Span]) -> str
     pred_labels = build_char_labels(text, pred, key="pred")
 
     def classify(i: int) -> str:
+        """Classify.
+        
+        Args:
+            i: Parameter.
+        
+        Returns:
+            Return value.
+        """
         g = gold_labels[i]
         p = pred_labels[i]
         if g and p:
@@ -221,12 +277,29 @@ def highlight_text(text: str, gold: Sequence[Span], pred: Sequence[Span]) -> str
 
 
 def _wrap_segment(segment: str, klass: str) -> str:
+    """Wrap segment.
+    
+    Args:
+        segment: Parameter.
+        klass: Parameter.
+    
+    Returns:
+        Return value.
+    """
     if klass == "none":
         return escape_html(segment)
     return f'<span class="{klass}">{escape_html(segment)}</span>'
 
 
 def escape_html(s: str) -> str:
+    """Escape html.
+    
+    Args:
+        s: Parameter.
+    
+    Returns:
+        Return value.
+    """
     return (
         s.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -241,6 +314,16 @@ def render_html_report(
     rows: Sequence[Dict[str, Any]],
     metrics: GlobalMetrics,
 ) -> None:
+    """Render html report.
+    
+    Args:
+        output_path: Parameter.
+        rows: Parameter.
+        metrics: Parameter.
+    
+    Returns:
+        Return value.
+    """
     css = """
     <style>
       body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
@@ -266,6 +349,14 @@ def render_html_report(
     """
 
     def fmt_pct(x: float) -> str:
+        """Fmt pct.
+        
+        Args:
+            x: Parameter.
+        
+        Returns:
+            Return value.
+        """
         return f"{x * 100:.2f}%"
 
     html_rows: List[str] = []
@@ -428,11 +519,29 @@ def render_html_report(
 
 
 def chunked(seq: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
+    """Chunked.
+    
+    Args:
+        seq: Parameter.
+        size: Parameter.
+    
+    Returns:
+        Return value.
+    """
     for i in range(0, len(seq), size):
         yield seq[i : i + size]
 
 
 def call_predict_batch(base_url: str, texts: Sequence[str]) -> List[List[Dict[str, Any]]]:
+    """Call predict batch.
+    
+    Args:
+        base_url: Parameter.
+        texts: Parameter.
+    
+    Returns:
+        Return value.
+    """
     url = base_url.rstrip("/") + "/api/predict_batch"
     resp = requests.post(url, json={"inputs": list(texts)}, timeout=60)
     resp.raise_for_status()
@@ -443,6 +552,15 @@ def call_predict_batch(base_url: str, texts: Sequence[str]) -> List[List[Dict[st
 
 
 def call_predict_single(base_url: str, text: str) -> List[Dict[str, Any]]:
+    """Call predict single.
+    
+    Args:
+        base_url: Parameter.
+        text: Parameter.
+    
+    Returns:
+        Return value.
+    """
     url = base_url.rstrip("/") + "/api/predict"
     resp = requests.post(url, json={"input": text}, timeout=60)
     resp.raise_for_status()
@@ -463,6 +581,17 @@ def evaluate(
     base_url: str,
     batch_size: int = 32,
 ) -> None:
+    """Evaluate.
+    
+    Args:
+        input_csv: Parameter.
+        output_dir: Parameter.
+        base_url: Parameter.
+        batch_size: Parameter.
+    
+    Returns:
+        Return value.
+    """
     os.makedirs(output_dir, exist_ok=True)
     out_csv_path = os.path.join(output_dir, "eval_results.csv")
     out_html_path = os.path.join(output_dir, "eval_report.html")
@@ -584,6 +713,11 @@ def evaluate(
 
 
 def build_argparser() -> argparse.ArgumentParser:
+    """Build argparser.
+    
+    Returns:
+        Return value.
+    """
     p = argparse.ArgumentParser(description="Evaluate NER service on CSV annotations")
     p.add_argument("--input", required=True, help="Path to input CSV (semicolon-separated)")
     p.add_argument("--output_dir", required=True, help="Directory to write outputs")
@@ -597,6 +731,11 @@ def build_argparser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Main.
+    
+    Returns:
+        Return value.
+    """
     args = build_argparser().parse_args()
     evaluate(
         input_csv=args.input,
