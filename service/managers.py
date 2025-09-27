@@ -93,7 +93,7 @@ class ModelManager:
             self.device = self._select_device()
             if self.model is not None:
                 # Do not reassign to preserve precise type information for mypy
-                self.model.to(self.device)
+                self.model.to(torch.device(self.device))
                 self.model.eval()
 
             # Load id2label mapping
@@ -144,8 +144,7 @@ class ModelManager:
                 # Tokenize
                 if self.tokenizer is None:
                     raise RuntimeError("Tokenizer not loaded")
-                tokenizer = cast(PreTrainedTokenizerBase, self.tokenizer)
-                encoding = tokenizer(
+                encoding = self.tokenizer(
                     normalized_text,
                     return_offsets_mapping=True,
                     truncation=True,
@@ -163,8 +162,7 @@ class ModelManager:
                 # Get predictions
                 if self.model is None:
                     raise RuntimeError("Model not loaded")
-                model = cast(PreTrainedModel, self.model)
-                outputs = model(**inputs)
+                outputs = self.model(**inputs)
                 logits = outputs.logits
                 pred_ids = logits.argmax(-1)[0].tolist()
 
