@@ -190,7 +190,7 @@ class ModelManager:
         """
         # Try config mapping first
         cfg_map = None
-        if self.model is not None and hasattr(self.model, 'config'):
+        if self.model is not None and hasattr(self.model, "config"):
             cfg_map = getattr(self.model.config, "id2label", None)
         if isinstance(cfg_map, dict):
             result = cfg_map.get(
