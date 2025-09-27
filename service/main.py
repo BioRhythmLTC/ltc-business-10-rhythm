@@ -1,335 +1,236 @@
-import os
-import re
-from typing import List, Dict, Any, Optional, Tuple
+"""
+X5 NER Service - FastAPI application with modular architecture.
 
-import torch
+This module provides a FastAPI service for Named Entity Recognition
+in Russian product search queries for the Pyaterochka mobile app.
+"""
+
 import asyncio
-from fastapi import FastAPI
-from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForTokenClassification
-from .utils import (
-    _token_tags_to_char_bio,
-    _find_word_spans,
-    _extract_spans_from_bio,
-    _merge_adjacent_spans,
-    _spans_to_api_spans,
-    preprocess_text_with_mapping,
+import logging
+import os
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List
+
+from fastapi import FastAPI, HTTPException
+
+from .config import (
+    ARTIFACTS_DIR,
+    CACHE_ENABLED,
+    CACHE_MAX_SIZE,
+    CACHE_TTL_SECONDS,
+)
+from .managers import cache_manager, model_manager
+from .models import (
+    CacheStatsResponse,
+    EntitySpan,
+    HealthResponse,
+    PredictBatchRequest,
+    PredictRequest,
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+# FastAPI app with lifespan management
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> Any:
+    """Manage application lifespan."""
+    # Startup
+    logger.info("Starting X5 NER Service")
+    try:
+        model_manager.ensure_loaded()
+        logger.info("Service started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start service: {e}")
+        raise
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down X5 NER Service")
+
+
+app = FastAPI(
+    title="X5 NER Service",
+    version="1.0.0",
+    description="Named Entity Recognition service for Pyaterochka product search",
+    lifespan=lifespan,
 )
 
 
-ART_DIR = os.environ.get("ARTIFACTS_DIR", os.path.join(os.path.dirname(__file__), "..", "artifacts"))
-ART_DIR = os.path.abspath(ART_DIR)
+@app.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    """Health check endpoint.
 
-
-def _select_device() -> str:
-    # Allow environment override to avoid unstable backends (e.g., macOS MPS)
-    """Select device.
-    
     Returns:
-        Return value.
+        Service health status and configuration.
     """
-    forced = os.environ.get("X5_FORCE_DEVICE") or os.environ.get("FORCE_DEVICE")
-    if forced:
-        f = forced.strip().lower()
-        if f in {"cpu", "cuda", "mps"}:
-            return f
-    if torch.cuda.is_available():
-        return "cuda"
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
-
-
-def _load_artifacts(art_dir: str):
-    """Load artifacts.
-    
-    Args:
-        art_dir: Parameter.
-    """
-    tokenizer = AutoTokenizer.from_pretrained(art_dir)
-    model = AutoModelForTokenClassification.from_pretrained(art_dir)
-    device = _select_device()
-    model = model.to(device).eval()
-    # id2label from config; fallback builds mapping
-    id2label = getattr(model.config, "id2label", None)
-    if not isinstance(id2label, dict):
-        num = getattr(model.config, "num_labels", 0)
-        id2label = {i: str(i) for i in range(num)}
-    return model, tokenizer, device, {int(k): v for k, v in id2label.items()}
-
-
-MODEL = None  # type: ignore[assignment]
-TOKENIZER = None  # type: ignore[assignment]
-DEVICE = _select_device()
-ID2LABEL: Dict[int, str] = {}
-
-def _ensure_loaded() -> Tuple[Any, Any, str, Dict[int, str]]:
-    """Ensure loaded.
-    
-    Returns:
-        Return value.
-    """
-    global MODEL, TOKENIZER, DEVICE, ID2LABEL
-    if MODEL is None or TOKENIZER is None or not ID2LABEL:
-        MODEL, TOKENIZER, DEVICE, ID2LABEL = _load_artifacts(ART_DIR)
-    return MODEL, TOKENIZER, DEVICE, ID2LABEL
-
-
-def _token_tags_to_char_bio(text: str, token_tags: List[str], offsets: List[Tuple[int, int]]) -> List[str]:
-    """Notebook-parity: build char BIO by placing B- at token start, I- inside.
-
-    This matches the pipeline's `token_tags_to_char_bio` behavior.
-    """
-    text_len = max([e for (s, e) in offsets if e is not None], default=0)
-    char_bio = ["O"] * text_len
-    for (s, e), tag in zip(offsets, token_tags):
-        if s is None or e is None or e <= s:
-            continue
-        if tag == "O" or "-" not in tag:
-            continue
-        try:
-            _bi, etype = tag.split("-", 1)
-        except Exception:
-            continue
-        char_bio[s] = f"B-{etype}"
-        for pos in range(s + 1, e):
-            char_bio[pos] = f"I-{etype}"
-    return char_bio
-
-
-def _find_word_spans(text: str) -> List[List[int]]:
-    """Find word spans.
-    
-    Args:
-        text: Parameter.
-    
-    Returns:
-        Return value.
-    """
-    return [[m.start(), m.end()] for m in re.finditer(r"\S+", text)]
-
-
-def _extract_spans_from_bio(text: str, bio_labels: List[str]) -> List[Tuple[int, int, str]]:
-    """Extract spans from bio.
-    
-    Args:
-        text: Parameter.
-        bio_labels: Parameter.
-    
-    Returns:
-        Return value.
-    """
-    n = len(text)
-    if len(bio_labels) != n:
-        bio_labels = (bio_labels + ["O"] * n)[:n]
-    spans: List[Tuple[int, int, str]] = []
-    current_start: Optional[int] = None
-    current_type: Optional[str] = None
-    for i, tag in enumerate(bio_labels):
-        if tag == "O" or tag is None:
-            if current_start is not None:
-                spans.append((current_start, i, current_type if current_type else ""))
-                current_start, current_type = None, None
-            continue
-        if "-" in tag:
-            bio, etype = tag.split("-", 1)
-        else:
-            bio, etype = "I", tag
-        if bio == "B":
-            if current_start is not None:
-                spans.append((current_start, i, current_type if current_type else ""))
-            current_start, current_type = i, etype
-        elif bio == "I":
-            if current_start is None:
-                current_start, current_type = i, etype
-            elif etype != current_type:
-                spans.append((current_start, i, current_type if current_type else ""))
-                current_start, current_type = i, etype
-        else:
-            if current_start is not None:
-                spans.append((current_start, i, current_type if current_type else ""))
-                current_start, current_type = None, None
-    if current_start is not None:
-        spans.append((current_start, n, current_type if current_type else ""))
-    return spans
-
-def _merge_adjacent_spans(text: str, spans: List[Tuple[int, int, str]], max_gap: int = 1) -> List[Tuple[int, int, str]]:
-    """Merge adjacent spans.
-    
-    Args:
-        text: Parameter.
-        spans: Parameter.
-        max_gap: Parameter.
-    
-    Returns:
-        Return value.
-    """
-    merged: List[Tuple[int, int, str]] = []
-    for s, e, t in sorted(spans, key=lambda x: (x[0], x[1])):
-        if merged and merged[-1][2] == t:
-            ps, pe, pt = merged[-1]
-            gap = s - pe
-            between = text[pe:s] if 0 <= pe <= s <= len(text) else ""
-            if gap <= max_gap and (between.strip() == "" or between in ["-", "–", ".", ","]):
-                merged[-1] = (ps, max(pe, e), pt)
-                continue
-        merged.append((s, e, t))
-    return merged
-
-def _spans_to_api_spans(text: str, spans: List[Tuple[int, int, str]], include_O: bool = False) -> List[Dict[str, Any]]:
-    """Spans to api spans.
-    
-    Args:
-        text: Parameter.
-        spans: Parameter.
-        include_O: Parameter.
-    
-    Returns:
-        Return value.
-    """
-    merged = _merge_adjacent_spans(text, spans)
-    words = _find_word_spans(text)
-    # Build mapping from word span to tag; default to O if include_O enabled
-    word_tag_map: Dict[Tuple[int, int], str] = {}
-    for s, e, t in merged:
-        if not t:
-            continue
-        inside = [(ws, we) for (ws, we) in words if not (we <= s or ws >= e)]
-        for j, (ws, we) in enumerate(inside):
-            tag = ("B-" if j == 0 else "I-") + t
-            word_tag_map[(ws, we)] = tag
-    api: List[Dict[str, Any]] = []
-    for ws, we in words:
-        tag = word_tag_map.get((ws, we))
-        if tag:
-            api.append({"start_index": ws, "end_index": we, "entity": tag})
-        elif include_O:
-            api.append({"start_index": ws, "end_index": we, "entity": "O"})
-    return api
-
-
-def predict_api_spans(text: str) -> List[Dict[str, Any]]:
-    """Predict api spans.
-    
-    Args:
-        text: Parameter.
-    
-    Returns:
-        Return value.
-    """
-    model, tokenizer, device, id2label_map = _ensure_loaded()
-    # Apply the same lightweight preprocessing as in the notebook pipeline
-    # Length is preserved 1:1, so indices remain valid
-    normalized_text, _ = preprocess_text_with_mapping(
-        text, do_lower=True, apply_translit_map=True
+    return HealthResponse(
+        status="ok",
+        device=model_manager.device,
+        artifacts=ARTIFACTS_DIR,
+        model_loaded=model_manager._loaded,
+        cache_stats=cache_manager.get_stats(),
     )
-    with torch.no_grad():
-        enc = tokenizer(normalized_text, return_offsets_mapping=True, truncation=True, return_tensors="pt")
-        offsets: List[Tuple[int, int]] = enc["offset_mapping"][0].tolist()
-        inp = {k: v.to(device) for k, v in enc.items() if k != "offset_mapping"}
-        logits = model(**inp).logits
-        pred_ids = logits.argmax(-1)[0].tolist()
-        # Use model.config.id2label when available for perfect parity
-        cfg_map = getattr(model.config, "id2label", None)
-        def _id2label(i: int) -> str:
-            """Id2label.
-            
-            Args:
-                i: Parameter.
-            
-            Returns:
-                Return value.
-            """
-            if isinstance(cfg_map, dict):
-                return cfg_map.get(i, cfg_map.get(str(i), id2label_map.get(i, "O")))
-            return id2label_map.get(i, "O")
-        token_tags = [_id2label(int(t)) for t in pred_ids]
-        char_bio = _token_tags_to_char_bio(normalized_text, token_tags, offsets)
-        # Decode contiguous char spans and then project to words, as in previous stable version
-        spans = _extract_spans_from_bio(
-            normalized_text[:max([e for (_, e) in offsets if e is not None] or [0])],
-            char_bio,
-        )
-        return _spans_to_api_spans(normalized_text, spans, include_O=True)
 
 
-class PredictRequest(BaseModel):
-    """Predictrequest.
-    """
-    input: str
+@app.post("/api/predict", response_model=List[EntitySpan])
+async def predict(req: PredictRequest) -> List[EntitySpan]:
+    """Predict entities in a single text.
 
+    Args:
+        req: Prediction request with input text.
 
-class PredictBatchRequest(BaseModel):
-    """Predictbatchrequest.
-    """
-    inputs: List[str]
-
-
-app = FastAPI(title="X5 NER Service", version="1.0.0")
-
-
-@app.on_event("startup")
-async def _warmup() -> None:
-    # Optional warmup; can be disabled or limited to CPU via env
-    """Warmup.
-    
     Returns:
-        Return value.
+        List of detected entity spans.
+
+    Raises:
+        HTTPException: If prediction fails.
     """
-    if str(os.environ.get("DISABLE_WARMUP", "")).lower() in {"1", "true", "yes"}:
-        return
-    # Skip MPS warmup by default due to stability issues; override to enable
-    if DEVICE == "mps" and str(os.environ.get("ALLOW_MPS_WARMUP", "")).lower() not in {"1", "true", "yes"}:
-        return
     try:
-        _ = predict_api_spans("")
-    except Exception:
-        pass
+        # Handle empty input
+        if not req.input.strip():
+            return []
+
+        # Check cache first
+        cached_result = cache_manager.get(req.input)
+        if cached_result is not None:
+            logger.info(f"Cache HIT for prediction: {req.input[:50]}...")
+            return [EntitySpan(**span) for span in cached_result]
+
+        # Run prediction in thread pool to avoid blocking
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, model_manager.predict, req.input
+        )
+
+        # Cache the result
+        cache_manager.set(req.input, result)
+        logger.info(f"Cache MISS for prediction: {req.input[:50]}...")
+
+        # Convert to response model
+        return [EntitySpan(**span) for span in result]
+
+    except RuntimeError as e:
+        logger.error(f"Prediction failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error during prediction: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/health")
-def health() -> Dict[str, str]:
-    """Health.
-    
-    Returns:
-        Return value.
-    """
-    return {"status": "ok", "device": DEVICE, "artifacts": ART_DIR}
+@app.post("/api/predict_batch", response_model=List[List[EntitySpan]])
+async def predict_batch(req: PredictBatchRequest) -> List[List[EntitySpan]]:
+    """Predict entities in multiple texts.
 
-
-@app.post("/api/predict")
-async def predict(req: PredictRequest) -> List[Dict[str, Any]]:
-    """Predict.
-    
     Args:
-        req: Parameter.
-    
+        req: Batch prediction request with list of texts.
+
     Returns:
-        Return value.
+        List of entity spans for each input text.
+
+    Raises:
+        HTTPException: If prediction fails.
     """
-    return await asyncio.to_thread(predict_api_spans, req.input)
+    try:
+        # Create tasks for parallel processing
+        tasks = [
+            asyncio.get_event_loop().run_in_executor(None, model_manager.predict, text)
+            for text in req.inputs
+        ]
+
+        # Execute all predictions in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Handle any exceptions
+        processed_results: List[List[EntitySpan]] = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Batch prediction failed for item {i}: {result}")
+                processed_results.append([])  # Return empty list for failed items
+            else:
+                # Type check: result should be List[Dict[str, Any]]
+                if isinstance(result, list):
+                    processed_results.append([EntitySpan(**span) for span in result])
+                else:
+                    logger.error(f"Unexpected result type for item {i}: {type(result)}")
+                    processed_results.append([])
+
+        return processed_results
+
+    except Exception as e:
+        logger.error(f"Batch prediction failed: {e}")
+        raise HTTPException(status_code=500, detail="Batch prediction failed")
 
 
-@app.post("/api/predict_batch")
-async def predict_batch(req: PredictBatchRequest) -> List[List[Dict[str, Any]]]:
-    """Predict batch.
-    
-    Args:
-        req: Parameter.
-    
+# Optional warmup endpoint for testing
+@app.post("/warmup")
+async def warmup() -> Dict[str, str]:
+    """Warmup endpoint to test model loading.
+
     Returns:
-        Return value.
+        Warmup status.
     """
-    tasks = [asyncio.to_thread(predict_api_spans, text) for text in req.inputs]
-    return await asyncio.gather(*tasks)
+    try:
+        model_manager.ensure_loaded()
+        # Test with empty string
+        _ = model_manager.predict("")
+        return {"status": "warmed_up", "device": model_manager.device}
+    except Exception as e:
+        logger.error(f"Warmup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Warmup failed: {str(e)}")
 
 
-# запустить сервис (gunicorn+uvicorn)
-# bash scripts/run_gunicorn.sh
-# curl -s http://127.0.0.1:8000/health
-# curl -s http://127.0.0.1:8000/api/predict -H 'Content-Type: application/json' \
-# -d '{"input":"Cгущеное молоко"}'
-# # # батч
-# curl -s http://127.0.0.1:8000/api/predict_batch -H 'Content-Type: application/json' \
-# -d '{"inputs":["Global Village","Artfruit виноград"]}'
+@app.get("/cache/stats", response_model=CacheStatsResponse)
+async def get_cache_stats() -> CacheStatsResponse:
+    """Get cache statistics.
 
+    Returns:
+        Cache statistics including hit rate and usage.
+    """
+    stats = cache_manager.get_stats()
+    return CacheStatsResponse(**stats)
+
+
+@app.delete("/cache/clear")
+async def clear_cache() -> Dict[str, str]:
+    """Clear all cached predictions.
+
+    Returns:
+        Confirmation message.
+    """
+    cache_manager.clear()
+    return {
+        "status": "cache_cleared",
+        "message": "All cached predictions have been cleared",
+    }
+
+
+@app.get("/cache/info")
+async def get_cache_info() -> Dict[str, Any]:
+    """Get detailed cache information.
+
+    Returns:
+        Detailed cache configuration and statistics.
+    """
+    stats = cache_manager.get_stats()
+    return {
+        "cache_config": {
+            "enabled": CACHE_ENABLED,
+            "max_size": CACHE_MAX_SIZE,
+            "ttl_seconds": CACHE_TTL_SECONDS,
+        },
+        "cache_stats": stats,
+        "environment_variables": {
+            "CACHE_ENABLED": os.environ.get("CACHE_ENABLED", "true"),
+            "CACHE_MAX_SIZE": os.environ.get("CACHE_MAX_SIZE", "1000"),
+            "CACHE_TTL_SECONDS": os.environ.get("CACHE_TTL_SECONDS", "3600"),
+        },
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
