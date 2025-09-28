@@ -5,8 +5,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from cachetools import TTLCache
 import torch
+from cachetools import TTLCache
 from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
@@ -22,7 +22,6 @@ from .config import (
     SUPPORTED_DEVICES,
 )
 from .utils import predict_one_pp_preloaded
-
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +82,11 @@ class ModelManager:
 
         try:
             logger.info(f"Loading model from {self.artifacts_dir}")
-            
+
             self.tokenizer = AutoTokenizer.from_pretrained(self.artifacts_dir)
-            self.model = AutoModelForTokenClassification.from_pretrained(self.artifacts_dir)
+            self.model = AutoModelForTokenClassification.from_pretrained(
+                self.artifacts_dir
+            )
 
             self.device = self._select_device()
             if self.model is not None:
@@ -146,8 +147,6 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Prediction failed for text '{text[:50]}...': {e}")
             raise RuntimeError(f"Prediction failed: {e}") from e
-
-    
 
 
 class CacheManager:
