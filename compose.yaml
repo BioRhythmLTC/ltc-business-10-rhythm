@@ -10,7 +10,9 @@ services:
       - MKL_NUM_THREADS=1
       - HOST=0.0.0.0
       - PORT=8000
-      - GUNICORN_WORKERS=3  # tune per CPU/GPU
+      - GUNICORN_WORKERS=4 # tune per CPU/GPU
+      - GUNICORN_PRELOAD_APP=true
+      - GUNICORN_LOGLEVEL=warning
     ports:
       - "8000:8000"
     volumes:

@@ -29,6 +29,32 @@ logger = logging.getLogger(__name__)
 
 
 # FastAPI app with lifespan management
+async def _background_warmup() -> None:
+    """Run a lightweight model warmup in the background.
+
+    Executes a few representative predictions to initialize tokenizers,
+    allocate tensors, and populate internal caches without blocking startup.
+    """
+    try:
+        logger.info("Starting background warmup")
+        # A few short, typical queries (including empty) to touch common paths
+        samples = [
+            "",
+            "молоко 1 л",
+            "кока кола 0.5л",
+            "сыр 45% 200г",
+        ]
+        loop = asyncio.get_event_loop()
+        for s in samples:
+            try:
+                await loop.run_in_executor(None, model_manager.predict, s)
+            except Exception as e_item:
+                logger.debug(f"Warmup sample failed (ignored): {e_item}")
+        logger.info("Background warmup completed")
+    except Exception as e:
+        logger.warning(f"Background warmup error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
     """Manage application lifespan."""
@@ -36,6 +62,18 @@ async def lifespan(app: FastAPI) -> Any:
     logger.info("Starting X5 NER Service")
     try:
         model_manager.ensure_loaded()
+        # Optional auto-warmup
+        disable_warm = os.getenv("DISABLE_WARMUP", "false").lower() in {"1", "true", "yes"}
+        allow_mps_warm = os.getenv("ALLOW_MPS_WARMUP", "false").lower() in {"1", "true", "yes"}
+        if not disable_warm:
+            if model_manager.device == "mps" and not allow_mps_warm:
+                logger.info("Auto-warmup skipped on MPS (set ALLOW_MPS_WARMUP=true to enable)")
+            else:
+                try:
+                    asyncio.get_event_loop().create_task(_background_warmup())
+                    logger.info("Auto-warmup task scheduled")
+                except Exception as e_task:
+                    logger.debug(f"Failed to schedule warmup task: {e_task}")
         logger.info("Service started successfully")
     except Exception as e:
         logger.error(f"Failed to start service: {e}")
