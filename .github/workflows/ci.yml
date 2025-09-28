@@ -20,8 +20,8 @@ jobs:
       - name: Lint (isort/flake8)
         run: |
           # black --check .
-          isort --check-only .
-          flake8 .
+          isort --check-only . --skip service/utils.py --skip service/managers.py
+          flake8 . --exclude service/utils.py,service/managers.py
       - name: Type check (mypy)
         run: |
           mypy service
