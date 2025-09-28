@@ -5,8 +5,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-import torch
 from cachetools import TTLCache
+import torch
 from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
