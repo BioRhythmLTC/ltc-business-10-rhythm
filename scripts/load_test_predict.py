@@ -61,7 +61,11 @@ async def one_request(
     """
     t0 = time.perf_counter()
     try:
-        async with session.post(url, json={"input": query}, timeout=timeout_s) as resp:
+        async with session.post(
+            url,
+            json={"input": query},
+            timeout=aiohttp.ClientTimeout(total=timeout_s),
+        ) as resp:
             _ = await resp.json()
             dt = time.perf_counter() - t0
             return RequestResult(
@@ -96,7 +100,9 @@ async def one_request_batch(
     payload_desc = f"[batch_size={len(queries)}]"
     try:
         async with session.post(
-            url, json={"inputs": queries}, timeout=timeout_s
+            url,
+            json={"inputs": queries},
+            timeout=aiohttp.ClientTimeout(total=timeout_s),
         ) as resp:
             _ = await resp.json()
             dt = time.perf_counter() - t0

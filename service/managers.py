@@ -21,12 +21,8 @@ from .config import (
     CACHE_TTL_SECONDS,
     SUPPORTED_DEVICES,
 )
-from .utils import (
-    _extract_spans_from_bio,
-    _spans_to_api_spans,
-    _token_tags_to_char_bio,
-    preprocess_text_with_mapping,
-)
+from .utils import predict_one_pp_preloaded
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +37,8 @@ class ModelManager:
         self.device: str = "cpu"
         self.id2label: Dict[int, str] = {}
         self._loaded = False
+        # Default model alias; can be overridden via env X5_MODEL_ALIAS
+        self.model_alias: str = os.environ.get("X5_MODEL_ALIAS", "rubert-base-cased")
 
     def _select_device(self) -> str:
         """Select the best available device for inference.
@@ -63,8 +61,8 @@ class ModelManager:
         # Auto-detect best device
         if torch.cuda.is_available():
             device = "cuda"
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            device = "mps"
+        # elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        #     device = "mps"
         else:
             device = "cpu"
 
@@ -85,10 +83,9 @@ class ModelManager:
 
         try:
             logger.info(f"Loading model from {self.artifacts_dir}")
+            
             self.tokenizer = AutoTokenizer.from_pretrained(self.artifacts_dir)
-            self.model = AutoModelForTokenClassification.from_pretrained(
-                self.artifacts_dir
-            )
+            self.model = AutoModelForTokenClassification.from_pretrained(self.artifacts_dir)
 
             self.device = self._select_device()
             if self.model is not None:
@@ -136,76 +133,21 @@ class ModelManager:
             raise RuntimeError("Model not loaded")
 
         try:
-            # Preprocess text
-            normalized_text, _ = preprocess_text_with_mapping(
-                text, do_lower=True, apply_translit_map=True
+            assert self.model is not None and self.tokenizer is not None
+            result = predict_one_pp_preloaded(
+                text=text,
+                model=cast(PreTrainedModel, self.model),
+                tokenizer=cast(PreTrainedTokenizerBase, self.tokenizer),
+                device=self.device,
             )
-
-            with torch.no_grad():
-                # Tokenize
-                if self.tokenizer is None:
-                    raise RuntimeError("Tokenizer not loaded")
-                encoding = self.tokenizer(
-                    normalized_text,
-                    return_offsets_mapping=True,
-                    truncation=True,
-                    return_tensors="pt",
-                )
-                offsets: List[Tuple[int, int]] = encoding["offset_mapping"][0].tolist()
-
-                # Move inputs to device
-                inputs = {
-                    k: v.to(self.device)
-                    for k, v in encoding.items()
-                    if k != "offset_mapping"
-                }
-
-                # Get predictions
-                if self.model is None:
-                    raise RuntimeError("Model not loaded")
-                outputs = self.model(**inputs)
-                logits = outputs.logits
-                pred_ids = logits.argmax(-1)[0].tolist()
-
-                # Convert to labels
-                token_tags = [self._id2label(token_id) for token_id in pred_ids]
-
-                # Convert to character-level BIO tags
-                char_bio = _token_tags_to_char_bio(normalized_text, token_tags, offsets)
-
-                # Extract spans
-                max_offset = max([e for (_, e) in offsets if e is not None] or [0])
-                spans = _extract_spans_from_bio(
-                    normalized_text[:max_offset],
-                    char_bio,
-                )
-
-                # Convert to API format
-                return _spans_to_api_spans(normalized_text, spans, include_O=True)
+            spans = cast(List[Dict[str, Any]], result.get("api_spans", []))
+            return spans
 
         except Exception as e:
             logger.error(f"Prediction failed for text '{text[:50]}...': {e}")
             raise RuntimeError(f"Prediction failed: {e}") from e
 
-    def _id2label(self, token_id: int) -> str:
-        """Convert token ID to label with fallback.
-
-        Args:
-            token_id: Token ID from model.
-
-        Returns:
-            Label string.
-        """
-        # Try config mapping first
-        cfg_map = None
-        if self.model is not None and hasattr(self.model, "config"):
-            cfg_map = getattr(self.model.config, "id2label", None)
-        if isinstance(cfg_map, dict):
-            result = cfg_map.get(
-                token_id, cfg_map.get(str(token_id), self.id2label.get(token_id, "O"))
-            )
-            return str(result) if result is not None else "O"
-        return self.id2label.get(token_id, "O")
+    
 
 
 class CacheManager:

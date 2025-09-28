@@ -3,14 +3,14 @@ services:
     build: .
     image: x5-ner:local
     environment:
-      - ARTIFACTS_DIR=/app/artifacts/rubert-tiny/latest
+      - ARTIFACTS_DIR=/app/artifacts/rubert-base-cased/20250927-233521
       - X5_FORCE_DEVICE=cpu
       - TOKENIZERS_PARALLELISM=false
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - HOST=0.0.0.0
       - PORT=8000
-      # - GUNICORN_WORKERS=3  # tune per CPU/GPU
+      - GUNICORN_WORKERS=3  # tune per CPU/GPU
     ports:
       - "8000:8000"
     volumes:
