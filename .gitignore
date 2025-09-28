@@ -47,5 +47,7 @@ eval_out_*/**
 *.log
 *.tmp
 .cache/
-
-
+*.zip
+*.sha256
+data_analysis.ipynb
+data_analysis_executed.ipynb
