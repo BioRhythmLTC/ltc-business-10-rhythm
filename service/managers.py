@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple, cast
+from threading import RLock
 
 import torch
 from cachetools import TTLCache
@@ -21,7 +22,7 @@ from .config import (
     CACHE_TTL_SECONDS,
     SUPPORTED_DEVICES,
 )
-from .utils import predict_one_pp_preloaded
+from .utils import predict_one_pp_preloaded, predict_batch_pp_preloaded
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,20 @@ class ModelManager:
                 m_any.to(torch.device(self.device))
                 m_any.eval()
 
+            # Constrain PyTorch thread usage to avoid oversubscription when
+            # running multiple concurrent requests across workers/threads
+            try:
+                torch_num_threads = int(os.environ.get("TORCH_NUM_THREADS", "1"))
+                torch.set_num_threads(torch_num_threads)
+            except Exception:
+                pass
+            try:
+                torch_num_interop = int(os.environ.get("TORCH_NUM_INTEROP_THREADS", "1"))
+                if hasattr(torch, "set_num_interop_threads"):
+                    torch.set_num_interop_threads(torch_num_interop)
+            except Exception:
+                pass
+
             # Load id2label mapping
             if self.model is not None:
                 id2label = getattr(self.model.config, "id2label", None)
@@ -143,6 +158,37 @@ class ModelManager:
             )
             spans = cast(List[Dict[str, Any]], result.get("api_spans", []))
             return spans
+    def predict_batch(self, texts: List[str]) -> List[List[Dict[str, Any]]]:
+        """Predict entities for a batch of texts using a single forward pass when possible.
+
+        Args:
+            texts: List of input strings.
+
+        Returns:
+            List of API span lists for each input text.
+
+        Raises:
+            RuntimeError: If model is not loaded or prediction fails.
+        """
+        if not self._loaded:
+            raise RuntimeError("Model not loaded")
+
+        try:
+            assert self.model is not None and self.tokenizer is not None
+            results = predict_batch_pp_preloaded(
+                texts=texts,
+                model=cast(PreTrainedModel, self.model),
+                tokenizer=cast(PreTrainedTokenizerBase, self.tokenizer),
+                device=self.device,
+            )
+            out: List[List[Dict[str, Any]]] = []
+            for r in results:
+                spans = cast(List[Dict[str, Any]], r.get("api_spans", []))
+                out.append(spans)
+            return out
+        except Exception as e:
+            logger.error(f"Batch prediction failed for {len(texts)} texts: {e}")
+            raise RuntimeError(f"Batch prediction failed: {e}") from e
 
         except Exception as e:
             logger.error(f"Prediction failed for text '{text[:50]}...': {e}")
@@ -166,6 +212,7 @@ class CacheManager:
             ttl_seconds: Time-to-live for cache items in seconds.
         """
         self.cache: TTLCache[str, Any] = TTLCache(maxsize=max_size, ttl=ttl_seconds)
+        self._lock: RLock = RLock()
         self.hit_count = 0
         self.miss_count = 0
         self.enabled = CACHE_ENABLED
@@ -197,7 +244,8 @@ class CacheManager:
             return None
 
         cache_key = self._get_cache_key(text)
-        result: Optional[List[Dict[str, Any]]] = self.cache.get(cache_key)
+        with self._lock:
+            result: Optional[List[Dict[str, Any]]] = self.cache.get(cache_key)
 
         if result is not None:
             self.hit_count += 1
@@ -219,14 +267,16 @@ class CacheManager:
             return
 
         cache_key = self._get_cache_key(text)
-        self.cache[cache_key] = result
+        with self._lock:
+            self.cache[cache_key] = result
         logger.debug(f"Cached: {text[:30]}...")
 
     def clear(self) -> None:
         """Clear all cached items and reset statistics."""
-        self.cache.clear()
-        self.hit_count = 0
-        self.miss_count = 0
+        with self._lock:
+            self.cache.clear()
+            self.hit_count = 0
+            self.miss_count = 0
         logger.info("In-memory cache cleared")
 
     def get_stats(self) -> Dict[str, Any]:
@@ -235,22 +285,23 @@ class CacheManager:
         Returns:
             Dictionary with cache performance metrics.
         """
-        total_requests = self.hit_count + self.miss_count
-        hit_rate = (
-            (self.hit_count / total_requests * 100) if total_requests > 0 else 0.0
-        )
+        with self._lock:
+            total_requests = self.hit_count + self.miss_count
+            hit_rate = (
+                (self.hit_count / total_requests * 100) if total_requests > 0 else 0.0
+            )
 
-        return {
-            "enabled": self.enabled,
-            "max_size": self.cache.maxsize,
-            "current_size": len(self.cache),
-            "ttl_seconds": self.cache.ttl,
-            "hit_count": self.hit_count,
-            "miss_count": self.miss_count,
-            "hit_rate_percent": round(hit_rate, 2),
-            "total_requests": total_requests,
-            "memory_usage_mb": round(len(str(self.cache)) / 1024 / 1024, 2),
-        }
+            return {
+                "enabled": self.enabled,
+                "max_size": self.cache.maxsize,
+                "current_size": len(self.cache),
+                "ttl_seconds": self.cache.ttl,
+                "hit_count": self.hit_count,
+                "miss_count": self.miss_count,
+                "hit_rate_percent": round(hit_rate, 2),
+                "total_requests": total_requests,
+                "memory_usage_mb": round(len(str(self.cache)) / 1024 / 1024, 2),
+            }
 
 
 # Global instances

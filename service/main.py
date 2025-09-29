@@ -24,8 +24,32 @@ from .models import (
 )
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Per-process bounded concurrency for CPU-bound inference
+_PREDICT_MAX_CONCURRENCY = int(os.getenv("PREDICT_MAX_CONCURRENCY", "2"))
+_predict_semaphore = asyncio.Semaphore(_PREDICT_MAX_CONCURRENCY)
+
+
+async def _predict_offthread(text: str) -> List[Dict[str, Any]]:
+    """Run model prediction in a bounded thread pool slot.
+
+    Binds CPU-bound inference to at most PREDICT_MAX_CONCURRENCY concurrent tasks
+    per worker process to avoid thread oversubscription.
+    """
+    loop = asyncio.get_running_loop()
+    async with _predict_semaphore:
+        return await loop.run_in_executor(None, model_manager.predict, text)
+
+
+async def _predict_batch_offthread(texts: List[str]) -> List[List[Dict[str, Any]]]:
+    """Run batched model prediction in a bounded thread pool slot.
+
+    Uses the same semaphore to avoid oversubscription across single and batch calls.
+    """
+    loop = asyncio.get_running_loop()
+    async with _predict_semaphore:
+        return await loop.run_in_executor(None, model_manager.predict_batch, texts)
 
 
 # FastAPI app with lifespan management
@@ -44,7 +68,7 @@ async def _background_warmup() -> None:
             "кока кола 0.5л",
             "сыр 45% 200г",
         ]
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         for s in samples:
             try:
                 await loop.run_in_executor(None, model_manager.predict, s)
@@ -70,7 +94,7 @@ async def lifespan(app: FastAPI) -> Any:
                 logger.info("Auto-warmup skipped on MPS (set ALLOW_MPS_WARMUP=true to enable)")
             else:
                 try:
-                    asyncio.get_event_loop().create_task(_background_warmup())
+                    asyncio.create_task(_background_warmup())
                     logger.info("Auto-warmup task scheduled")
                 except Exception as e_task:
                     logger.debug(f"Failed to schedule warmup task: {e_task}")
@@ -130,17 +154,17 @@ async def predict(req: PredictRequest) -> List[EntitySpan]:
         # Check cache first
         cached_result = cache_manager.get(req.input)
         if cached_result is not None:
-            logger.info(f"Cache HIT for prediction: {req.input[:50]}...")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Cache HIT for prediction: %s...", req.input[:50])
             return [EntitySpan(**span) for span in cached_result]
 
-        # Run prediction in thread pool to avoid blocking
-        result = await asyncio.get_event_loop().run_in_executor(
-            None, model_manager.predict, req.input
-        )
+        # Run prediction in bounded thread pool to avoid oversubscription
+        result = await _predict_offthread(req.input)
 
         # Cache the result
         cache_manager.set(req.input, result)
-        logger.info(f"Cache MISS for prediction: {req.input[:50]}...")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Cache MISS for prediction: %s...", req.input[:50])
 
         # Convert to response model
         return [EntitySpan(**span) for span in result]
@@ -167,30 +191,56 @@ async def predict_batch(req: PredictBatchRequest) -> List[List[EntitySpan]]:
         HTTPException: If prediction fails.
     """
     try:
-        # Create tasks for parallel processing
-        tasks = [
-            asyncio.get_event_loop().run_in_executor(None, model_manager.predict, text)
-            for text in req.inputs
-        ]
+        inputs = list(req.inputs)
+        if not inputs:
+            return []
 
-        # Execute all predictions in parallel
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Handle any exceptions
-        processed_results: List[List[EntitySpan]] = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"Batch prediction failed for item {i}: {result}")
-                processed_results.append([])  # Return empty list for failed items
+        # Pre-check cache and deduplicate to minimize work
+        index_map: Dict[str, List[int]] = {}
+        cached: Dict[int, List[EntitySpan]] = {}
+        misses: List[str] = []
+        for idx, text in enumerate(inputs):
+            if text not in index_map:
+                index_map[text] = []
+            index_map[text].append(idx)
+            c = cache_manager.get(text)
+            if c is not None:
+                cached[idx] = [EntitySpan(**span) for span in c]
             else:
-                # Type check: result should be List[Dict[str, Any]]
-                if isinstance(result, list):
-                    processed_results.append([EntitySpan(**span) for span in result])
-                else:
-                    logger.error(f"Unexpected result type for item {i}: {type(result)}")
-                    processed_results.append([])
+                if text not in misses:
+                    misses.append(text)
 
-        return processed_results
+        miss_results: Dict[str, List[EntitySpan]] = {}
+        if misses:
+            try:
+                batch_spans = await _predict_batch_offthread(misses)
+                for txt, spans in zip(misses, batch_spans):
+                    # Store in cache
+                    cache_manager.set(txt, spans)
+                    miss_results[txt] = [EntitySpan(**span) for span in spans]
+            except Exception as e:
+                logger.error(f"Batched prediction failed for {len(misses)} items: {e}")
+                # Fallback: process misses individually in bounded slots
+                fallback_tasks = [
+                    _predict_offthread(t) for t in misses
+                ]
+                fallback_done = await asyncio.gather(*fallback_tasks, return_exceptions=True)
+                for t, r in zip(misses, fallback_done):
+                    if isinstance(r, Exception):
+                        logger.error(f"Fallback single prediction failed for text: {t[:40]}...: {r}")
+                        miss_results[t] = []
+                    else:
+                        cache_manager.set(t, r)
+                        miss_results[t] = [EntitySpan(**span) for span in r]
+
+        # Assemble results in original order
+        out: List[List[EntitySpan]] = []
+        for idx, text in enumerate(inputs):
+            if idx in cached:
+                out.append(cached[idx])
+            else:
+                out.append(miss_results.get(text, []))
+        return out
 
     except Exception as e:
         logger.error(f"Batch prediction failed: {e}")
@@ -207,8 +257,8 @@ async def warmup() -> Dict[str, str]:
     """
     try:
         model_manager.ensure_loaded()
-        # Test with empty string
-        _ = model_manager.predict("")
+        # Test with empty string without blocking the event loop
+        _ = await _predict_offthread("")
         return {"status": "warmed_up", "device": model_manager.device}
     except Exception as e:
         logger.error(f"Warmup failed: {e}")
