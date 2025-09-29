@@ -8,11 +8,17 @@ services:
       - TOKENIZERS_PARALLELISM=false
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
+      - TORCH_NUM_THREADS=1
+      - TORCH_NUM_INTEROP_THREADS=1
       - HOST=0.0.0.0
       - PORT=8000
       - GUNICORN_WORKERS=9 # tune per CPU/GPU
       - GUNICORN_PRELOAD_APP=true
       - GUNICORN_LOGLEVEL=warning
+      - MICRO_BATCH_ENABLED=true
+      - MICRO_BATCH_MAX_SIZE=32
+      - MICRO_BATCH_MAX_WAIT_MS=3
+      - MICRO_BATCH_HARD_TIMEOUT_MS=500
     ports:
       - "8000:8000"
     volumes:

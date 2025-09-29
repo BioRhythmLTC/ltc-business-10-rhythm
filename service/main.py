@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException
 
@@ -50,6 +50,126 @@ async def _predict_batch_offthread(texts: List[str]) -> List[List[Dict[str, Any]
     loop = asyncio.get_running_loop()
     async with _predict_semaphore:
         return await loop.run_in_executor(None, model_manager.predict_batch, texts)
+
+
+class MicroBatcher:
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_wait_ms: int,
+        hard_timeout_ms: int,
+        enabled: bool,
+        queue_maxsize: int = 0,
+    ) -> None:
+        self.max_batch_size = max(1, int(max_batch_size))
+        self.max_wait_ms = max(0, int(max_wait_ms))
+        self.hard_timeout_ms = max(1, int(hard_timeout_ms))
+        self.enabled = enabled
+        self._queue: "asyncio.Queue[Tuple[str, asyncio.Future]]" = asyncio.Queue(
+            maxsize=queue_maxsize
+        )
+        self._task: Optional[asyncio.Task] = None
+
+    async def start(self) -> None:
+        if not self.enabled:
+            return
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._run())
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+    async def enqueue(self, text: str) -> List[EntitySpan]:
+        if not self.enabled:
+            result = await _predict_offthread(text)
+            return [EntitySpan(**span) for span in result]
+        fut: "asyncio.Future" = asyncio.get_running_loop().create_future()
+        await self._queue.put((text, fut))
+        try:
+            res = await asyncio.wait_for(
+                fut, timeout=self.hard_timeout_ms / 1000.0
+            )
+            return res
+        except asyncio.TimeoutError:
+            if not fut.done():
+                fut.cancel()
+            result = await _predict_offthread(text)
+            return [EntitySpan(**span) for span in result]
+
+    async def _run(self) -> None:
+        try:
+            while True:
+                text0, fut0 = await self._queue.get()
+                batch: List[Tuple[str, asyncio.Future]] = [(text0, fut0)]
+                start = asyncio.get_running_loop().time()
+                deadline = start + (self.max_wait_ms / 1000.0)
+                while len(batch) < self.max_batch_size:
+                    timeout = max(0.0, deadline - asyncio.get_running_loop().time())
+                    if timeout == 0.0:
+                        break
+                    try:
+                        itm = await asyncio.wait_for(self._queue.get(), timeout=timeout)
+                        batch.append(itm)
+                    except asyncio.TimeoutError:
+                        break
+
+                index_map: Dict[str, List[int]] = {}
+                for i, (t, _) in enumerate(batch):
+                    index_map.setdefault(t, []).append(i)
+
+                cached_entities: Dict[int, List[EntitySpan]] = {}
+                misses: List[str] = []
+                for i, (t, _) in enumerate(batch):
+                    c = cache_manager.get(t)
+                    if c is not None:
+                        cached_entities[i] = [EntitySpan(**span) for span in c]
+                    else:
+                        if t not in misses:
+                            misses.append(t)
+
+                miss_results: Dict[str, List[EntitySpan]] = {}
+                if misses:
+                    try:
+                        spans_lists = await _predict_batch_offthread(misses)
+                        for txt, spans in zip(misses, spans_lists):
+                            cache_manager.set(txt, spans)
+                            miss_results[txt] = [EntitySpan(**span) for span in spans]
+                    except Exception as e:
+                        logger.error(
+                            f"Micro-batch execution failed for {len(misses)} items: {e}"
+                        )
+                        fallback = await asyncio.gather(
+                            *[_predict_offthread(t) for t in misses],
+                            return_exceptions=True,
+                        )
+                        for t, r in zip(misses, fallback):
+                            if isinstance(r, Exception):
+                                miss_results[t] = []
+                            else:
+                                cache_manager.set(t, r)
+                                miss_results[t] = [EntitySpan(**span) for span in r]
+
+                for i, (t, fut) in enumerate(batch):
+                    if fut.cancelled():
+                        continue
+                    try:
+                        if i in cached_entities:
+                            fut.set_result(cached_entities[i])
+                        else:
+                            fut.set_result(miss_results.get(t, []))
+                    except Exception as e_set:
+                        try:
+                            fut.set_exception(e_set)
+                        except Exception:
+                            pass
+        except asyncio.CancelledError:
+            return
 
 
 # FastAPI app with lifespan management
@@ -98,6 +218,41 @@ async def lifespan(app: FastAPI) -> Any:
                     logger.info("Auto-warmup task scheduled")
                 except Exception as e_task:
                     logger.debug(f"Failed to schedule warmup task: {e_task}")
+        # Micro-batch startup
+        try:
+            mb_enabled = os.getenv("MICRO_BATCH_ENABLED", "true").lower() in {"1", "true", "yes"}
+            mb_max_size = int(os.getenv("MICRO_BATCH_MAX_SIZE", "32"))
+            mb_max_wait_ms = int(os.getenv("MICRO_BATCH_MAX_WAIT_MS", "3"))
+            mb_hard_timeout_ms = int(os.getenv("MICRO_BATCH_HARD_TIMEOUT_MS", "500"))
+            mb_queue_max = int(os.getenv("MICRO_BATCH_QUEUE_MAXSIZE", "0"))
+        except Exception:
+            mb_enabled, mb_max_size, mb_max_wait_ms, mb_hard_timeout_ms, mb_queue_max = (
+                True,
+                32,
+                3,
+                500,
+                0,
+            )
+
+        global _micro_batcher
+        _micro_batcher = MicroBatcher(
+            max_batch_size=mb_max_size,
+            max_wait_ms=mb_max_wait_ms,
+            hard_timeout_ms=mb_hard_timeout_ms,
+            enabled=mb_enabled,
+            queue_maxsize=mb_queue_max,
+        )
+        try:
+            await _micro_batcher.start()
+            if _micro_batcher.enabled:
+                logger.info(
+                    f"Micro-batching enabled: size={mb_max_size} wait_ms={mb_max_wait_ms}"
+                )
+            else:
+                logger.info("Micro-batching disabled")
+        except Exception as e_mb:
+            logger.warning(f"Failed to start micro-batching: {e_mb}")
+
         logger.info("Service started successfully")
     except Exception as e:
         logger.error(f"Failed to start service: {e}")
@@ -107,6 +262,11 @@ async def lifespan(app: FastAPI) -> Any:
 
     # Shutdown
     logger.info("Shutting down X5 NER Service")
+    try:
+        if _micro_batcher is not None:
+            await _micro_batcher.stop()
+    except Exception as e:
+        logger.debug(f"Error stopping micro-batcher: {e}")
 
 
 app = FastAPI(
@@ -151,22 +311,17 @@ async def predict(req: PredictRequest) -> List[EntitySpan]:
         if not req.input.strip():
             return []
 
-        # Check cache first
+        if _micro_batcher is not None and _micro_batcher.enabled:
+            return await _micro_batcher.enqueue(req.input)
         cached_result = cache_manager.get(req.input)
         if cached_result is not None:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("Cache HIT for prediction: %s...", req.input[:50])
             return [EntitySpan(**span) for span in cached_result]
-
-        # Run prediction in bounded thread pool to avoid oversubscription
         result = await _predict_offthread(req.input)
-
-        # Cache the result
         cache_manager.set(req.input, result)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Cache MISS for prediction: %s...", req.input[:50])
-
-        # Convert to response model
         return [EntitySpan(**span) for span in result]
 
     except RuntimeError as e:
