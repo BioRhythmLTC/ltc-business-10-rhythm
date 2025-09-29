@@ -39,7 +39,8 @@ except Exception:  # pragma: no cover
 
 # Basic type aliases and defaults used in annotations and inference
 Span = Tuple[int, int, str]
-MAX_SEQ_LEN = 128
+MAX_SEQ_LEN = 64
+NON_O_MARGIN: float = float(os.getenv("NER_NON_O_MARGIN", "0.35"))
 
 # Preprocessing constants (transliteration, invisible spaces, script regexes)
 # Confusable mappings (Latin<->Cyrillic)
@@ -92,6 +93,10 @@ LABELS: List[str] = [
 ]
 label2id: Dict[str, int] = {l: i for i, l in enumerate(LABELS)}
 id2label: Dict[int, str] = {i: l for l, i in label2id.items()}
+
+# Default model alias and run id used for path resolution when not provided explicitly
+MODEL_ALIAS: str = os.getenv("X5_MODEL_ALIAS", "rubert-base-cased")
+RUN_ID: str = os.getenv("X5_RUN_ID", "latest")
 
 # 2) Path helpers
 
@@ -758,23 +763,21 @@ def to_char_bio(sample: str, spans: List[List[Any]]) -> List[str]:
     return labels
 
 
-# Align char BIO → token labels using offset_mapping
-def align_bio_to_tokens(
-    text: str, char_bio: List[str], tokenizer, label2id: Dict[str, int]
-) -> Dict[str, Any]:
-    """Align bio to tokens.
+# Sync Train/Val preprocessing with Inference: align_bio_to_tokens with normalization
+def align_bio_to_tokens(text: str, char_bio: List[str], tokenizer, label2id: Dict[str, int]) -> Dict[str, Any]:
+    # 1) Normalize text
+    norm_text, norm_to_orig = preprocess_text_with_mapping(text, do_lower=True, apply_translit_map=True)
 
-    Args:
-        text: Parameter.
-        char_bio: Parameter.
-        tokenizer: Parameter.
-        label2id: Parameter.
+    # 2) Map BIO to normalized space
+    n_orig = len(char_bio)
+    char_bio_norm: List[str] = ["O"] * len(norm_text)
+    for j, i_orig in enumerate(norm_to_orig):
+        if 0 <= i_orig < n_orig:
+            char_bio_norm[j] = char_bio[i_orig]
 
-    Returns:
-        Return value.
-    """
+    # 3) Tokenize
     enc = tokenizer(
-        text,
+        norm_text,
         return_offsets_mapping=True,
         truncation=True,
         max_length=MAX_SEQ_LEN,
@@ -782,46 +785,54 @@ def align_bio_to_tokens(
     )
     offsets = enc["offset_mapping"]
 
+    # 4) Assign labels by majority overlap (>=50%) and B/I by previous char
     token_labels: List[int] = []
-    for idx, (start, end) in enumerate(offsets):
-        if end == 0 and start == 0:  # спецтокены
+    for start, end in offsets:
+        if end == 0 and start == 0:
             token_labels.append(-100)
             continue
-        if start == end:  # пустые отрезки (пробелы)
+        if start == end:
             token_labels.append(-100)
             continue
 
-        tok_label = "O"
-        first_pos = None
-        for pos in range(start, min(end, len(char_bio))):
-            if char_bio[pos] != "O":
-                tok_label = char_bio[pos]
-                first_pos = pos
-                break
+        span_end = min(end, len(char_bio_norm))
+        span_len = max(0, span_end - start)
+        if span_len == 0:
+            token_labels.append(-100)
+            continue
 
-        if tok_label == "O":
+        type_counts: Dict[str, int] = {}
+        first_pos_for_type: Dict[str, int] = {}
+        for pos in range(start, span_end):
+            tag = char_bio_norm[pos]
+            if tag == "O" or tag is None:
+                continue
+            etype = tag.split("-", 1)[1] if "-" in tag else tag
+            type_counts[etype] = type_counts.get(etype, 0) + 1
+            if etype not in first_pos_for_type:
+                first_pos_for_type[etype] = pos
+
+        if not type_counts:
             token_labels.append(label2id["O"])
             continue
 
-        bio, etype = tok_label.split("-", 1)
-        if (
-            first_pos is not None
-            and first_pos > 0
-            and char_bio[first_pos - 1].endswith(etype)
-        ):
-            tok_tag = f"I-{etype}"
+        majority_etype = max(type_counts.items(), key=lambda kv: kv[1])[0]
+        maj_count = type_counts[majority_etype]
+        if maj_count / float(span_len) < 0.5:
+            token_labels.append(label2id["O"])
+            continue
+
+        first_pos = first_pos_for_type[majority_etype]
+        if first_pos > 0 and str(char_bio_norm[first_pos - 1]).endswith(majority_etype):
+            tok_tag = f"I-{majority_etype}"
         else:
-            tok_tag = f"B-{etype}"
+            tok_tag = f"B-{majority_etype}"
         token_labels.append(label2id.get(tok_tag, label2id["O"]))
 
-    # сохраняем метки
     enc["labels"] = token_labels
-
-    # сохраняем offset_mapping отдельно для compute_metrics
     enc["offset_mapping"] = offsets
-
+    enc["normalized_text"] = norm_text
     return enc
-
 
 def presence_vector(ann):
     """Presence vector.
