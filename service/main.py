@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from fastapi import FastAPI, HTTPException
 
@@ -65,7 +65,7 @@ class MicroBatcher:
         self.max_wait_ms = max(0, int(max_wait_ms))
         self.hard_timeout_ms = max(1, int(hard_timeout_ms))
         self.enabled = enabled
-        self._queue: "asyncio.Queue[Tuple[str, asyncio.Future]]" = asyncio.Queue(
+        self._queue: "asyncio.Queue[Tuple[str, asyncio.Future[List[EntitySpan]]]]" = asyncio.Queue(
             maxsize=queue_maxsize
         )
         self._task: Optional[asyncio.Task] = None
@@ -89,10 +89,13 @@ class MicroBatcher:
         if not self.enabled:
             result = await _predict_offthread(text)
             return [EntitySpan(**span) for span in result]
-        fut: "asyncio.Future" = asyncio.get_running_loop().create_future()
+        fut = cast(
+            "asyncio.Future[List[EntitySpan]]",
+            asyncio.get_running_loop().create_future(),
+        )
         await self._queue.put((text, fut))
         try:
-            res = await asyncio.wait_for(
+            res: List[EntitySpan] = await asyncio.wait_for(
                 fut, timeout=self.hard_timeout_ms / 1000.0
             )
             return res
@@ -106,7 +109,7 @@ class MicroBatcher:
         try:
             while True:
                 text0, fut0 = await self._queue.get()
-                batch: List[Tuple[str, asyncio.Future]] = [(text0, fut0)]
+                batch: List[Tuple[str, asyncio.Future[List[EntitySpan]]]] = [(text0, fut0)]
                 start = asyncio.get_running_loop().time()
                 deadline = start + (self.max_wait_ms / 1000.0)
                 while len(batch) < self.max_batch_size:
@@ -152,8 +155,9 @@ class MicroBatcher:
                             if isinstance(r, Exception):
                                 miss_results[t] = []
                             else:
-                                cache_manager.set(t, r)
-                                miss_results[t] = [EntitySpan(**span) for span in r]
+                                spans_ok = cast(List[Dict[str, Any]], r)
+                                cache_manager.set(t, spans_ok)
+                                miss_results[t] = [EntitySpan(**span) for span in spans_ok]
 
                 for i, (t, fut) in enumerate(batch):
                     if fut.cancelled():
@@ -170,6 +174,10 @@ class MicroBatcher:
                             pass
         except asyncio.CancelledError:
             return
+
+
+# Global micro-batcher instance (initialized in lifespan)
+_micro_batcher: Optional[MicroBatcher] = None
 
 
 # FastAPI app with lifespan management
@@ -385,8 +393,9 @@ async def predict_batch(req: PredictBatchRequest) -> List[List[EntitySpan]]:
                         logger.error(f"Fallback single prediction failed for text: {t[:40]}...: {r}")
                         miss_results[t] = []
                     else:
-                        cache_manager.set(t, r)
-                        miss_results[t] = [EntitySpan(**span) for span in r]
+                        r_ok = cast(List[Dict[str, Any]], r)
+                        cache_manager.set(t, r_ok)
+                        miss_results[t] = [EntitySpan(**span) for span in r_ok]
 
         # Assemble results in original order
         out: List[List[EntitySpan]] = []
