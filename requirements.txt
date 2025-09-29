@@ -92,7 +92,7 @@ notebook_shim==0.2.4
 numpy==2.0.2
 onnxruntime==1.19.2
 overrides==7.7.0
-packaging==25.0
+packaging==24.2
 pandas==2.3.2
 pandocfilters==1.5.1
 parso==0.8.5
@@ -103,7 +103,7 @@ pluggy==1.6.0
 prometheus_client==0.23.1
 prompt_toolkit==3.0.52
 propcache==0.3.2
-protobuf==6.32.1
+protobuf==5.28.3
 psutil==7.1.0
 ptyprocess==0.7.0
 pure_eval==0.2.3
@@ -112,7 +112,7 @@ pycparser==2.23
 pydantic==2.11.9
 pydantic_core==2.33.2
 Pygments==2.19.2
-pyparsing==3.2.4
+pyparsing==3.1.1
 pytest==8.4.2
 python-dateutil==2.9.0.post0
 python-json-logger==3.3.0
@@ -169,4 +169,6 @@ xxhash==3.5.0
 yarl==1.20.1
 zipp==3.23.0
 tensorboard==2.17.1
-mlflow==2.16.2
+mlflow-skinny==2.16.2
+dotenv-0.9.9 
+python-dotenv-1.1.1
