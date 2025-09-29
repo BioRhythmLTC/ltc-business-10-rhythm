@@ -158,6 +158,9 @@ class ModelManager:
             )
             spans = cast(List[Dict[str, Any]], result.get("api_spans", []))
             return spans
+        except Exception as e:
+            logger.error(f"Prediction failed for text '{text[:50]}...': {e}")
+            raise RuntimeError(f"Prediction failed: {e}") from e
     def predict_batch(self, texts: List[str]) -> List[List[Dict[str, Any]]]:
         """Predict entities for a batch of texts using a single forward pass when possible.
 
@@ -189,10 +192,6 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Batch prediction failed for {len(texts)} texts: {e}")
             raise RuntimeError(f"Batch prediction failed: {e}") from e
-
-        except Exception as e:
-            logger.error(f"Prediction failed for text '{text[:50]}...': {e}")
-            raise RuntimeError(f"Prediction failed: {e}") from e
 
 
 class CacheManager:
