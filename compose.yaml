@@ -19,6 +19,8 @@ services:
       - MICRO_BATCH_MAX_SIZE=32
       - MICRO_BATCH_MAX_WAIT_MS=3
       - MICRO_BATCH_HARD_TIMEOUT_MS=500
+      - GUNICORN_MAX_REQUESTS=5500
+      - GUNICORN_MAX_REQUESTS_JITTER=0
     ports:
       - "8000:8000"
     volumes:
