@@ -12,7 +12,7 @@ services:
       - TORCH_NUM_INTEROP_THREADS=1
       - HOST=0.0.0.0
       - PORT=8000
-      - GUNICORN_WORKERS=9 # tune per CPU/GPU
+      - GUNICORN_WORKERS=4 # tune per CPU/GPU
       - GUNICORN_PRELOAD_APP=true
       - GUNICORN_LOGLEVEL=warning
       - MICRO_BATCH_ENABLED=true
