@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import ARTIFACTS_DIR, CACHE_ENABLED, CACHE_MAX_SIZE, CACHE_TTL_SECONDS
 from .managers import cache_manager, model_manager
@@ -92,6 +93,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Все домены
+    allow_credentials=True,
+    allow_methods=["*"],  # Все HTTP методы
+    allow_headers=["*"],  # Все заголовки
+)
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
