@@ -1,115 +1,127 @@
 # X5 NER Service
 
-FastAPI service for Named Entity Recognition over Russian search queries. Loads a HuggingFace-compatible tokenizer/model from ARTIFACTS_DIR and exposes two endpoints: predict (single) and predict_batch.
+FastAPI сервис для выделения сущностей в коротких товарных описаниях (NER). Загружает совместимые с HuggingFace артефакты из `ARTIFACTS_DIR` и предоставляет REST API.
 
-## API
+## Содержание
+- Установка и запуск (локально и в Docker)
+- Конфигурация (переменные окружения)
+- Эндпоинты и примеры запросов
+- Артефакты модели и внешние источники
+- Нагрузочное тестирование и оффлайн-оценка
 
-- GET /health
-  - Returns JSON with status, selected device, and artifacts path.
-  - Example: `{ "status": "ok", "device": "cpu|cuda|mps", "artifacts": "/abs/path" }`
-- POST /api/predict
-  - Request: `{ "input": "текст запроса" }`
-  - Response: list of spans, each with:
-    - `start_index` (int): start char index of a word span
-    - `end_index` (int): end char index (exclusive)
-    - `entity` (str): BIO-tag like `B-TYPE`, `I-BRAND`, ...
-- POST /api/predict_batch
-  - Request: `{ "inputs": ["строка 1", "строка 2", ...] }`
-  - Response: array of arrays in the same shape as inputs
+## Установка и запуск
 
-OpenAPI docs are available at `/docs` (Swagger UI) and `/redoc` once the service runs.
+### Требования
+- Python 3.10+
+- Linux/macOS/Windows
+- Для Docker-режима: Docker 24+ и docker compose
 
-## Quickstart
+### Локальный запуск (CPU)
+1) Создайте и активируйте виртуальное окружение
+```
+python -m venv .venv && source .venv/bin/activate
+```
+2) Установите зависимости
+```
+pip install -r requirements-prod.txt   # минимальный рантайм
+# или для разработки (ноутбуки, тесты, линтеры):
+pip install -r requirements-dev.txt
+```
+3) Подготовьте артефакты модели
+```
+mkdir -p artifacts
+# Скопируйте файлы модели в ./artifacts или укажите путь через ARTIFACTS_DIR
+```
+4) Запустите сервер
+```
+uvicorn service.main:app --host 0.0.0.0 --port 8000
+```
+5) Откройте документацию
+```
+http://localhost:8000/docs
+```
 
-### Local (CPU)
+### Запуск в Docker
+Сборка и запуск:
+```
+docker build -t x5-ner:local .
+docker run --rm -p 8000:8000 \
+  -e ARTIFACTS_DIR=/app/artifacts/rubert-base-cased/20250930-113112 \
+  -e TOKENIZERS_PARALLELISM=false -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 \
+  -v "$PWD/artifacts:/app/artifacts:ro" x5-ner:local
+```
+Docker Compose (рекомендуется для локальных проверок):
+```
+docker compose up --build
+```
+См. `compose.yaml` для переменных окружения, volume и healthcheck.
 
-1. Create and activate a virtualenv (Python 3.10+ recommended)
-2. Install dependencies:
-   - Production (minimal runtime): `pip install -r requirements-prod.txt`
-   - Development (includes notebooks, tests, linters): `pip install -r requirements-dev.txt`
-3. Put model artifacts into `artifacts/` (see below) or set `ARTIFACTS_DIR` to your path.
-4. Configure environment variables (see `docs/ENV_VARS.md`). Optionally create a local `.env` (do not commit).
-5. Run development server:
-   - `uvicorn service.main:app --host 0.0.0.0 --port 8000`
-6. Or production server (Gunicorn):
-   - `bash run_gunicorn.sh` (or `python -m gunicorn service.main:app -k uvicorn.workers.UvicornWorker -c gunicorn_conf.py --bind 0.0.0.0:8000`)
+## Конфигурация
+Ключевые переменные окружения (полный список — в `docs/ENV_VARS.md`):
+- ARTIFACTS_DIR — путь к артефактам модели (по умолчанию `./artifacts`)
+- X5_FORCE_DEVICE или FORCE_DEVICE — `cpu`/`cuda`/`mps` (если доступно)
+- PREDICT_MAX_CONCURRENCY — ограничение параллелизма инференса на процесс
+- MICRO_BATCH_ENABLED — `true|false`
+- MICRO_BATCH_MAX_SIZE, MICRO_BATCH_MAX_WAIT_MS, MICRO_BATCH_HARD_TIMEOUT_MS — тюнинг микробатчинга
+- CACHE_ENABLED, CACHE_MAX_SIZE, CACHE_TTL_SECONDS — параметры кэша
+- TOKENIZERS_PARALLELISM=false, OMP_NUM_THREADS, MKL_NUM_THREADS, TORCH_NUM_THREADS, TORCH_NUM_INTEROP_THREADS — тюнинг потоков
 
-Environment variables (summary):
+## Эндпоинты
+- GET `/health` — статус сервиса, устройство, путь к артефактам и статистика кэша
+- POST `/api/predict` — предсказание для одной строки
+- POST `/api/predict_batch` — предсказания для списка строк
+- POST `/warmup` — опциональный прогрев модели
+- GET `/cache/stats`, DELETE `/cache/clear`, GET `/cache/info` — кэш
 
-- ARTIFACTS_DIR: path to model artifacts (default: ./artifacts)
-- TOKENIZERS_PARALLELISM=false (recommended)
-- OMP_NUM_THREADS=1, MKL_NUM_THREADS=1 (avoid CPU over-subscription)
-- GUNICORN_* (see gunicorn_conf.py): workers, timeouts, logging
-- DISABLE_WARMUP=1 to skip model warmup on startup
-- ALLOW_MPS_WARMUP=1 to allow warmup on macOS MPS
+Примеры запросов:
+```
+curl -s http://localhost:8000/health
 
-### Health, Liveness, Readiness
+curl -s -X POST http://localhost:8000/api/predict \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"cola 500ml 5%"}'
 
-- Liveness probe: `GET /health` returns 200 when the process is alive
-- Readiness probe: also `GET /health`; for stricter readiness, ensure artifacts are present and consider a warmup (default warmup can be disabled via `DISABLE_WARMUP=1`)
-- Kubernetes example:
-  - livenessProbe: httpGet path `/health`, port `8000`
-  - readinessProbe: httpGet path `/health`, port `8000`
+curl -s -X POST http://localhost:8000/api/predict_batch \
+  -H 'Content-Type: application/json' \
+  -d '{"inputs":["cola 500ml","фанта 1л 6%"]}'
+```
+Ответы содержат список BIO-спанов на уровне слов:
+```
+[
+  {"start_index":0,"end_index":4,"entity":"B-BRAND"},
+  {"start_index":5,"end_index":10,"entity":"B-VOLUME"},
+  {"start_index":11,"end_index":13,"entity":"B-PERCENT"}
+]
+```
 
-### Docker
+## Артефакты модели и внешние источники
+- Предобученная модель: `DeepPavlov/rubert-base-cased` (HuggingFace)
+- Формат артефактов (совместим с HF):
+  - config.json, tokenizer.json, tokenizer_config.json, vocab.txt, special_tokens_map.json
+  - model.safetensors (или иные веса, поддерживаемые Transformers)
+  - (опц.) id2label в config.json или отдельный mapping
+- Папки с примерами артефактов: `artifacts/` (см. README в `docs/ARTIFACTS.md`)
 
-A multi-stage `Dockerfile` and `.dockerignore` are included.
+## Нагрузочное тестирование
+Есть утилита для нагрузочного теста `/api/predict`:
+```
+python scripts/load_test_predict.py \
+  --base_url http://localhost:8000 \
+  --input examples/sample_input.csv \
+  --concurrency 100 --requests-per-client 50 --timeout 1.0 \
+  --log_requests eval_out/load_requests.csv
+```
 
-- Build:
-  - `docker build -t x5-ner:local .`
-- Run (mount artifacts):
-  - `docker run --rm -p 8000:8000 -e ARTIFACTS_DIR=/app/artifacts -v "$PWD/artifacts:/app/artifacts:ro" x5-ner:local`
-- Swagger: `http://localhost:8000/docs`
-- Compose (optional):
-  - `docker compose up --build`
-  - See `compose.yaml` for envs, volume, healthcheck.
+## Оффлайн-оценка
+Скрипт оффлайн-оценки предсказаний сервиса:
+```
+python scripts/evaluate_service.py \
+  --input examples/annotated_sample.csv \
+  --output_dir eval_out \
+  --base_url http://localhost:8000 \
+  --batch_size 32
+```
+Выходы: `eval_results.csv`, `eval_report.html`, `eval_stats.json`.
 
-## Model artifacts
-
-Place HuggingFace-compatible files in `ARTIFACTS_DIR` (default `./artifacts`):
-- config.json, tokenizer.json, tokenizer_config.json, vocab.txt, special_tokens_map.json
-- model.safetensors (or framework-specific weights)
-- (optional) label_mapping.json or id2label in config.json
-
-See `docs/ARTIFACTS.md` for packaging guidance and a future GitHub Releases flow (assets only). For now, download or prepare artifacts locally and point `ARTIFACTS_DIR` to their folder.
-
-## Gunicorn guidance
-
-- Workers (`GUNICORN_WORKERS`): start with `(CPU cores * 2) + 1` for CPU-only. For GPU-bound inference, fewer workers may be better (e.g., 1–2 per GPU) to avoid memory contention.
-- Timeouts: `GUNICORN_TIMEOUT=30`, `GUNICORN_GRACEFUL_TIMEOUT=30` are sane defaults; adjust for your SLA.
-- Max requests: `GUNICORN_MAX_REQUESTS=1000` with jitter helps memory stability for long runs.
-- Logging: defaults to stdout/stderr. In containers, collect via the platform’s log driver (e.g., Docker/Pod logs). Set `GUNICORN_LOGLEVEL=info|warning|debug` as needed.
-
-## Load testing
-
-`scripts/load_test_predict.py` — async нагрузочный тест `/api/predict`.
-
-- CSV формат: `;`-разделитель, колонка `search_query` (см. `examples/sample_input.csv`).
-- Основные флаги: `--base_url`, `--input`, `--concurrency`, `--requests-per-client`, `--timeout`, `--log_requests`.
-- Пример:
-  - `python scripts/load_test_predict.py --base_url http://localhost:8000 --input examples/sample_input.csv --concurrency 100 --requests-per-client 50 --timeout 1.0 --log_requests eval_out/load_requests.csv`
-- Где лог: если указать `--log_requests PATH`, сохранит CSV с отправленными запросами в `PATH` и выведет путь в консоль.
-
-## Offline evaluation
-
-`scripts/evaluate_service.py` — оффлайн-оценка предсказаний сервиса.
-
-- Вход: CSV `id;search_query;annotation`, где `annotation` — Python-список кортежей `[(start,end,'B-TYPE'), ...]`.
-- Запуск:
-  - `python scripts/evaluate_service.py --input examples/annotated_sample.csv --output_dir eval_out --base_url http://localhost:8000 --batch_size 32`
-- Выходы (в `--output_dir`, по умолчанию используйте папку наподобие `eval_out/`):
-  - `eval_results.csv` — покомпонентные результаты
-  - `eval_report.html` — интерактивный отчет (открыть в браузере)
-  - `eval_stats.json` — агрегированные метрики
-- Git: каталоги `eval_out*/` исключены из репозитория. В CI можно сохранять их как артефакты job’ов.
-
-## Development
-
-- Keep notebooks in `notebooks/` and generated outputs out of Git.
-- Use pre-commit for consistent style:
-  - `pip install pre-commit && pre-commit install`
-  - Hooks: black, isort, flake8, trailing-whitespace, end-of-file-fixer
-
-## License
-
-Add MIT or Apache-2.0 license file to the repo root.
+## Лицензия
+<!-- Добавьте файл лицензии (MIT/Apache-2.0) в корень репозитория. -->
