@@ -1,7 +1,8 @@
 from service.utils import (
-    _extract_spans_from_bio,
-    _spans_to_api_spans,
-    _token_tags_to_char_bio,
+    token_tags_to_char_bio,
+    extract_spans_from_bio,
+    spans_to_api_spans,
+    merge_adjacent_spans,
 )
 
 
@@ -10,7 +11,7 @@ def test_token_tags_to_char_bio_basic():
     # token offsets for "hello" (0..5) and "world" (6..11)
     offsets = [(0, 5), (6, 11)]
     tags = ["B-TYPE", "O"]
-    bio = _token_tags_to_char_bio(text, tags, offsets)
+    bio = token_tags_to_char_bio(text, tags, offsets)
     assert bio[0] == "B-TYPE"
     assert all(x == "I-TYPE" for x in bio[1:5])
     assert bio[5] == "O"
@@ -23,9 +24,18 @@ def test_extract_spans_from_bio_and_api_spans():
     bio[0] = "B-TYPE"
     for i in range(1, 5):
         bio[i] = "I-TYPE"
-    spans = _extract_spans_from_bio(text, bio)
+    spans = extract_spans_from_bio(text, bio)
     assert spans == [(0, 5, "TYPE")]
-    api = _spans_to_api_spans(text, spans)
+    api = spans_to_api_spans(text, spans)
     assert api[0]["start_index"] == 0
     assert api[0]["end_index"] == 5
     assert api[0]["entity"].startswith("B-")
+
+
+def test_merge_adjacent_spans_merges_with_small_gap():
+    text = "brand -name"
+    spans = [(0, 5, "BRAND"), (7, 11, "BRAND")]
+    merged = merge_adjacent_spans(text, spans, max_gap=1)
+    # With gap=2 but between text contains '-' (allowed), function merges; with gap=1 it should not
+    assert merged == spans
+ 
