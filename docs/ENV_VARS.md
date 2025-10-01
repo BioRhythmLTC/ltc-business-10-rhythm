@@ -22,6 +22,8 @@ Copy these into a local `.env` (do not commit real `.env`). Values below are saf
 - TOKENIZERS_PARALLELISM: `false`
 - OMP_NUM_THREADS: `1`
 - MKL_NUM_THREADS: `1`
+ - TORCH_NUM_THREADS: `1`
+ - TORCH_NUM_INTEROP_THREADS: `1`
 
 ## Warmup behavior
 - DISABLE_WARMUP: `false`
@@ -31,6 +33,19 @@ Copy these into a local `.env` (do not commit real `.env`). Values below are saf
 - CACHE_ENABLED: `true`
 - CACHE_MAX_SIZE: `1000`
 - CACHE_TTL_SECONDS: `3600`
+
+## Prediction behavior
+- PREDICT_MAX_CONCURRENCY: `2` — ограничение параллелизма инференса на процесс
+- PREDICT_FAIL_SAFE: `true` — при внутренних ошибках возвращает пустой результат (200)
+- MAX_INPUT_CHARS: `512` — максимальная длина входной строки (обрезка)
+- ROOT_PUBLIC: `false` — если true, корень `/` будет отдавать информацию о сервисе
+
+## Micro-batching
+- MICRO_BATCH_ENABLED: `true`
+- MICRO_BATCH_MAX_SIZE: `32`
+- MICRO_BATCH_MAX_WAIT_MS: `3`
+- MICRO_BATCH_HARD_TIMEOUT_MS: `500`
+- MICRO_BATCH_QUEUE_MAXSIZE: `0`
 
 ## Third-party integrations (configure via CI/CD secrets, not committed)
 - SENTRY_DSN: ``
