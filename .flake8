@@ -9,8 +9,6 @@ exclude =
     .venv,
     .mypy_cache,
     .pytest_cache,
-    service/utils.py,
-    service/managers.py
 per-file-ignores =
     __init__.py:F401,
     tests/*:S101
