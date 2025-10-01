@@ -340,18 +340,22 @@ def _sanitize_input(s: str) -> str:
 
 # Global exception handlers (reduce noisy logs for 404/validation; keep JSON shape)
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 @app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
     # Return JSON for 404 and others; avoid stack traces in logs
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error(f"Unhandled error: {exc}")
     if FAIL_SAFE:
         # Keep shape minimal; callers of /api/* expect JSON
