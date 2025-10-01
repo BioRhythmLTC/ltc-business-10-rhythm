@@ -3,8 +3,8 @@
 import hashlib
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple, cast
 from threading import RLock
+from typing import Any, Dict, List, Optional, cast
 
 import torch
 from cachetools import TTLCache
@@ -22,7 +22,7 @@ from .config import (
     CACHE_TTL_SECONDS,
     SUPPORTED_DEVICES,
 )
-from .utils import predict_one_pp_preloaded, predict_batch_pp_preloaded
+from .utils import predict_batch_pp_preloaded, predict_one_pp_preloaded
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,9 @@ class ModelManager:
             except Exception:
                 pass
             try:
-                torch_num_interop = int(os.environ.get("TORCH_NUM_INTEROP_THREADS", "1"))
+                torch_num_interop = int(
+                    os.environ.get("TORCH_NUM_INTEROP_THREADS", "1")
+                )
                 if hasattr(torch, "set_num_interop_threads"):
                     torch.set_num_interop_threads(torch_num_interop)
             except Exception:
@@ -164,6 +166,7 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Prediction failed for text '{text[:50]}...': {e}")
             raise RuntimeError(f"Prediction failed: {e}") from e
+
     def predict_batch(self, texts: List[str]) -> List[List[Dict[str, Any]]]:
         """Predict entities for a batch of texts using a single forward pass when possible.
 
