@@ -21,11 +21,9 @@ Optional:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import sys
-from typing import Optional
 
 
 def parse_args() -> argparse.Namespace:
@@ -87,5 +85,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
