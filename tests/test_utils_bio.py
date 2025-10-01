@@ -1,8 +1,8 @@
 from service.utils import (
-    token_tags_to_char_bio,
     extract_spans_from_bio,
-    spans_to_api_spans,
     merge_adjacent_spans,
+    spans_to_api_spans,
+    token_tags_to_char_bio,
 )
 
 
@@ -38,4 +38,3 @@ def test_merge_adjacent_spans_merges_with_small_gap():
     merged = merge_adjacent_spans(text, spans, max_gap=1)
     # With gap=2 but between text contains '-' (allowed), function merges; with gap=1 it should not
     assert merged == spans
- 

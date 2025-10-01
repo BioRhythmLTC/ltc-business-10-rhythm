@@ -1,8 +1,7 @@
-import os
 from fastapi.testclient import TestClient
 
-from service.main import app
 from service import main as main_mod
+from service.main import app
 
 
 def _mock_model_manager(monkeypatch):
@@ -25,9 +24,15 @@ def _mock_model_manager(monkeypatch):
             for t in texts:
                 if t == "__raise__":
                     raise RuntimeError("boom")
-                out.append([
-                    {"start_index": 0, "end_index": min(5, len(t)), "entity": "B-TYPE"}
-                ])
+                out.append(
+                    [
+                        {
+                            "start_index": 0,
+                            "end_index": min(5, len(t)),
+                            "entity": "B-TYPE",
+                        }
+                    ]
+                )
             return out
 
     fake = FakeMM()
@@ -143,4 +148,3 @@ def test_warmup(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body.get("status") == "warmed_up"
-

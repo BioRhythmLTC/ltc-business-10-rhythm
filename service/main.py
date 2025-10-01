@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import ARTIFACTS_DIR, CACHE_ENABLED, CACHE_MAX_SIZE, CACHE_TTL_SECONDS
@@ -75,8 +75,8 @@ class MicroBatcher:
         self.max_wait_ms = max(0, int(max_wait_ms))
         self.hard_timeout_ms = max(1, int(hard_timeout_ms))
         self.enabled = enabled
-        self._queue: "asyncio.Queue[Tuple[str, asyncio.Future[List[EntitySpan]]]]" = asyncio.Queue(
-            maxsize=queue_maxsize
+        self._queue: "asyncio.Queue[Tuple[str, asyncio.Future[List[EntitySpan]]]]" = (
+            asyncio.Queue(maxsize=queue_maxsize)
         )
         self._task: Optional[asyncio.Task] = None
 
@@ -119,7 +119,9 @@ class MicroBatcher:
         try:
             while True:
                 text0, fut0 = await self._queue.get()
-                batch: List[Tuple[str, asyncio.Future[List[EntitySpan]]]] = [(text0, fut0)]
+                batch: List[Tuple[str, asyncio.Future[List[EntitySpan]]]] = [
+                    (text0, fut0)
+                ]
                 start = asyncio.get_running_loop().time()
                 deadline = start + (self.max_wait_ms / 1000.0)
                 while len(batch) < self.max_batch_size:
@@ -167,7 +169,9 @@ class MicroBatcher:
                             else:
                                 spans_ok = cast(List[Dict[str, Any]], r)
                                 cache_manager.set(t, spans_ok)
-                                miss_results[t] = [EntitySpan(**span) for span in spans_ok]
+                                miss_results[t] = [
+                                    EntitySpan(**span) for span in spans_ok
+                                ]
 
                 for i, (t, fut) in enumerate(batch):
                     if fut.cancelled():
@@ -225,11 +229,21 @@ async def lifespan(app: FastAPI) -> Any:
     try:
         model_manager.ensure_loaded()
         # Optional auto-warmup
-        disable_warm = os.getenv("DISABLE_WARMUP", "false").lower() in {"1", "true", "yes"}
-        allow_mps_warm = os.getenv("ALLOW_MPS_WARMUP", "false").lower() in {"1", "true", "yes"}
+        disable_warm = os.getenv("DISABLE_WARMUP", "false").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        allow_mps_warm = os.getenv("ALLOW_MPS_WARMUP", "false").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         if not disable_warm:
             if model_manager.device == "mps" and not allow_mps_warm:
-                logger.info("Auto-warmup skipped on MPS (set ALLOW_MPS_WARMUP=true to enable)")
+                logger.info(
+                    "Auto-warmup skipped on MPS (set ALLOW_MPS_WARMUP=true to enable)"
+                )
             else:
                 try:
                     asyncio.create_task(_background_warmup())
@@ -238,13 +252,23 @@ async def lifespan(app: FastAPI) -> Any:
                     logger.debug(f"Failed to schedule warmup task: {e_task}")
         # Micro-batch startup
         try:
-            mb_enabled = os.getenv("MICRO_BATCH_ENABLED", "true").lower() in {"1", "true", "yes"}
+            mb_enabled = os.getenv("MICRO_BATCH_ENABLED", "true").lower() in {
+                "1",
+                "true",
+                "yes",
+            }
             mb_max_size = int(os.getenv("MICRO_BATCH_MAX_SIZE", "32"))
             mb_max_wait_ms = int(os.getenv("MICRO_BATCH_MAX_WAIT_MS", "3"))
             mb_hard_timeout_ms = int(os.getenv("MICRO_BATCH_HARD_TIMEOUT_MS", "500"))
             mb_queue_max = int(os.getenv("MICRO_BATCH_QUEUE_MAXSIZE", "0"))
         except Exception:
-            mb_enabled, mb_max_size, mb_max_wait_ms, mb_hard_timeout_ms, mb_queue_max = (
+            (
+                mb_enabled,
+                mb_max_size,
+                mb_max_wait_ms,
+                mb_hard_timeout_ms,
+                mb_queue_max,
+            ) = (
                 True,
                 32,
                 3,
@@ -355,6 +379,7 @@ async def root() -> JSONResponse:
 async def favicon() -> JSONResponse:
     return JSONResponse(status_code=204, content=None)
 
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Health check endpoint.
@@ -458,13 +483,15 @@ async def predict_batch(req: PredictBatchRequest) -> List[List[EntitySpan]]:
             except Exception as e:
                 logger.error(f"Batched prediction failed for {len(misses)} items: {e}")
                 # Fallback: process misses individually in bounded slots
-                fallback_tasks = [
-                    _predict_offthread(t) for t in misses
-                ]
-                fallback_done = await asyncio.gather(*fallback_tasks, return_exceptions=True)
+                fallback_tasks = [_predict_offthread(t) for t in misses]
+                fallback_done = await asyncio.gather(
+                    *fallback_tasks, return_exceptions=True
+                )
                 for t, r in zip(misses, fallback_done):
                     if isinstance(r, Exception):
-                        logger.error(f"Fallback single prediction failed for text: {t[:40]}...: {r}")
+                        logger.error(
+                            f"Fallback single prediction failed for text: {t[:40]}...: {r}"
+                        )
                         miss_results[t] = []
                     else:
                         r_ok = cast(List[Dict[str, Any]], r)
