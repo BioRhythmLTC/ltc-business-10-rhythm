@@ -39,6 +39,8 @@ class ModelManager:
         self._loaded = False
         # Default model alias; can be overridden via env X5_MODEL_ALIAS
         self.model_alias: str = os.environ.get("X5_MODEL_ALIAS", "rubert-base-cased")
+        # Inference lock to guard non-thread-safe tokenizer/model paths
+        self._infer_lock: RLock = RLock()
 
     def _select_device(self) -> str:
         """Select the best available device for inference.
@@ -150,12 +152,13 @@ class ModelManager:
 
         try:
             assert self.model is not None and self.tokenizer is not None
-            result = predict_one_pp_preloaded(
-                text=text,
-                model=cast(PreTrainedModel, self.model),
-                tokenizer=cast(PreTrainedTokenizerBase, self.tokenizer),
-                device=self.device,
-            )
+            with self._infer_lock:
+                result = predict_one_pp_preloaded(
+                    text=text,
+                    model=cast(PreTrainedModel, self.model),
+                    tokenizer=cast(PreTrainedTokenizerBase, self.tokenizer),
+                    device=self.device,
+                )
             spans = cast(List[Dict[str, Any]], result.get("api_spans", []))
             return spans
         except Exception as e:
@@ -178,12 +181,13 @@ class ModelManager:
 
         try:
             assert self.model is not None and self.tokenizer is not None
-            results = predict_batch_pp_preloaded(
-                texts=texts,
-                model=cast(PreTrainedModel, self.model),
-                tokenizer=cast(PreTrainedTokenizerBase, self.tokenizer),
-                device=self.device,
-            )
+            with self._infer_lock:
+                results = predict_batch_pp_preloaded(
+                    texts=texts,
+                    model=cast(PreTrainedModel, self.model),
+                    tokenizer=cast(PreTrainedTokenizerBase, self.tokenizer),
+                    device=self.device,
+                )
             out: List[List[Dict[str, Any]]] = []
             for r in results:
                 spans = cast(List[Dict[str, Any]], r.get("api_spans", []))

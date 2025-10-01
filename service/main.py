@@ -11,8 +11,11 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import ARTIFACTS_DIR, CACHE_ENABLED, CACHE_MAX_SIZE, CACHE_TTL_SECONDS
 from .managers import cache_manager, model_manager
@@ -30,6 +33,12 @@ logger = logging.getLogger(__name__)
 # Per-process bounded concurrency for CPU-bound inference
 _PREDICT_MAX_CONCURRENCY = int(os.getenv("PREDICT_MAX_CONCURRENCY", "2"))
 _predict_semaphore = asyncio.Semaphore(_PREDICT_MAX_CONCURRENCY)
+
+# Fail-safe behavior and input limits
+FAIL_SAFE = os.getenv("PREDICT_FAIL_SAFE", "true").lower() in {"1", "true", "yes"}
+MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "512"))
+# Root exposure policy: default false for production hardening
+ROOT_PUBLIC = os.getenv("ROOT_PUBLIC", "false").lower() in {"1", "true", "yes"}
 
 
 async def _predict_offthread(text: str) -> List[Dict[str, Any]]:
@@ -293,6 +302,59 @@ app.add_middleware(
     allow_headers=["*"],  # Все заголовки
 )
 
+
+def _sanitize_input(s: str) -> str:
+    try:
+        s = s or ""
+    except Exception:
+        s = ""
+    s = s.strip()
+    if len(s) > MAX_INPUT_CHARS:
+        return s[:MAX_INPUT_CHARS]
+    return s
+
+
+# Global exception handlers (reduce noisy logs for 404/validation; keep JSON shape)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # Return JSON for 404 and others; avoid stack traces in logs
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {exc}")
+    if FAIL_SAFE:
+        # Keep shape minimal; callers of /api/* expect JSON
+        return JSONResponse(status_code=200, content=[])
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+# Root endpoint: in production return 404 (minimal JSON); optional public mode via ROOT_PUBLIC
+@app.get("/")
+async def root() -> JSONResponse:
+    if ROOT_PUBLIC:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "name": "X5 NER Service",
+                "version": "1.0.0",
+                "docs": "/docs",
+                "health": "/health",
+            },
+        )
+    return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+
+@app.get("/favicon.ico")
+async def favicon() -> JSONResponse:
+    return JSONResponse(status_code=204, content=None)
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Health check endpoint.
@@ -323,28 +385,29 @@ async def predict(req: PredictRequest) -> List[EntitySpan]:
         HTTPException: If prediction fails.
     """
     try:
-        # Handle empty input
-        if not req.input.strip():
+        # Handle empty/oversized input
+        text = _sanitize_input(req.input)
+        if not text:
             return []
 
         if _micro_batcher is not None and _micro_batcher.enabled:
-            return await _micro_batcher.enqueue(req.input)
-        cached_result = cache_manager.get(req.input)
+            return await _micro_batcher.enqueue(text)
+        cached_result = cache_manager.get(text)
         if cached_result is not None:
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("Cache HIT for prediction: %s...", req.input[:50])
+                logger.debug("Cache HIT for prediction: %s...", text[:50])
             return [EntitySpan(**span) for span in cached_result]
-        result = await _predict_offthread(req.input)
-        cache_manager.set(req.input, result)
+        result = await _predict_offthread(text)
+        cache_manager.set(text, result)
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("Cache MISS for prediction: %s...", req.input[:50])
+            logger.debug("Cache MISS for prediction: %s...", text[:50])
         return [EntitySpan(**span) for span in result]
 
-    except RuntimeError as e:
-        logger.error(f"Prediction failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
     except Exception as e:
-        logger.error(f"Unexpected error during prediction: {e}")
+        # Fail-safe: treat inference/tokenization errors as empty result
+        logger.warning(f"Prediction error (fail-safe: {FAIL_SAFE}): {e}")
+        if FAIL_SAFE:
+            return []
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -362,9 +425,12 @@ async def predict_batch(req: PredictBatchRequest) -> List[List[EntitySpan]]:
         HTTPException: If prediction fails.
     """
     try:
-        inputs = list(req.inputs)
-        if not inputs:
+        inputs_raw = list(req.inputs)
+        if not inputs_raw:
             return []
+
+        # Sanitize inputs and preserve alignment
+        inputs = [_sanitize_input(x) for x in inputs_raw]
 
         # Pre-check cache and deduplicate to minimize work
         index_map: Dict[str, List[int]] = {}
@@ -415,7 +481,14 @@ async def predict_batch(req: PredictBatchRequest) -> List[List[EntitySpan]]:
         return out
 
     except Exception as e:
-        logger.error(f"Batch prediction failed: {e}")
+        logger.warning(f"Batch prediction error (fail-safe: {FAIL_SAFE}): {e}")
+        if FAIL_SAFE:
+            # Preserve response shape
+            try:
+                n = len(getattr(req, "inputs", []))
+            except Exception:
+                n = 0
+            return [[] for _ in range(n)]
         raise HTTPException(status_code=500, detail="Batch prediction failed")
 
 

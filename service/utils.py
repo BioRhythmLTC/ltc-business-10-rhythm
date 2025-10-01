@@ -93,6 +93,11 @@ LABELS: List[str] = [
 label2id: Dict[str, int] = {l: i for i, l in enumerate(LABELS)}
 id2label: Dict[int, str] = {i: l for l, i in label2id.items()}
 
+# Default alias/run for helper resolvers used outside the service.
+# 'latest' leverages artifacts/<alias>/latest symlink created by training/export.
+MODEL_ALIAS: str = os.getenv("X5_MODEL_ALIAS", "rubert-base-cased")
+RUN_ID: str = os.getenv("X5_RUN_ID", "latest")
+
 # 2) Path helpers
 
 

@@ -123,5 +123,4 @@ python scripts/evaluate_service.py \
 ```
 Выходы: `eval_results.csv`, `eval_report.html`, `eval_stats.json`.
 
-## Лицензия
-<!-- Добавьте файл лицензии (MIT/Apache-2.0) в корень репозитория. -->
+
