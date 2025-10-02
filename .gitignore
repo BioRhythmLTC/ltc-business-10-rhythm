@@ -13,6 +13,7 @@ x5_ner_env/
 .venv/
 venv/
 x5_ner_env_new/
+.venv-02/
 # --- Jupyter ---
 .ipynb_checkpoints/
 
