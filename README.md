@@ -132,7 +132,7 @@ curl -s -X POST http://localhost:8000/api/predict_batch \
 ## Нагрузочное тестирование
 Есть утилита для нагрузочного теста `/api/predict`:
 ```
-python scripts/load_test_predict.py \
+python3 scripts/load_test_predict.py \
   --base_url http://localhost:8000 \
   --input examples/sample_input.csv \
   --concurrency 100 --requests-per-client 50 --timeout 1.0 \
