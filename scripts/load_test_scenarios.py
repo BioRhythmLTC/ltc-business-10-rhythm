@@ -21,12 +21,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+from dataclasses import dataclass
 import logging
 import os
 import random
 import statistics
 import time
-from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import aiohttp
