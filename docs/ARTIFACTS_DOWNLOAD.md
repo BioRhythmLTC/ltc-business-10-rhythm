@@ -68,8 +68,8 @@ The compose file maps `./artifacts` from your host to `/app/artifacts` in the co
 Unzip so that this path exists on the host:
 
 ```bash
-# Ensure the repo root contains ./artifacts/rubert-tiny/latest
-unzip -o rubert-tiny-latest.zip -d .
+# Ensure the repo root contains ./artifacts/rubert-tiny/latest (name example)
+unzip -o rubert-base-cased.zip -d .
 
 # Resulting tree (important part):
 # ./artifacts/rubert-tiny/latest/{config.json, tokenizer.json, ..., model.safetensors}

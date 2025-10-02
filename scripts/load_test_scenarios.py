@@ -21,15 +21,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import logging
 import os
 import random
 import statistics
 import time
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import aiohttp
-import logging
 
 
 DEFAULT_CSV = os.environ.get(
