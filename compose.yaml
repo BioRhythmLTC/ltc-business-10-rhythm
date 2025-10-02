@@ -4,7 +4,8 @@ services:
     image: x5-ner:local
     environment:
       - TZ=Europe/Moscow
-      - ARTIFACTS_DIR=/app/artifacts/rubert_base_cased_20250930_165530
+      # - ARTIFACTS_DIR=/app/artifacts/rubert-base-cased/20250930_165530
+      - ARTIFACTS_DIR=/app/artifacts/rubert_base_cased_20251002-111705
       - X5_FORCE_DEVICE=cpu
       - TOKENIZERS_PARALLELISM=false
       - OMP_NUM_THREADS=1
