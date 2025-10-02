@@ -142,11 +142,11 @@ python scripts/load_test_predict.py \
 
 ## Полная документация
 - Архитектура решения: см. [docs/solution.md](docs/solution.md)
-- API-спецификация: см. `docs/API.md`
-- Переменные окружения: см. `docs/ENV_VARS.md`
-- Артефакты модели: см. `docs/ARTIFACTS.md` и `docs/ARTIFACTS_DOWNLOAD.md`
-- Развёртывание: см. `docs/DEPLOYMENT.md`
-- Настройка производительности: см. `docs/PERFORMANCE_TUNING.md`
+- API-спецификация: см. [docs/API.md](docs/API.md)
+- Переменные окружения: см. [docs/ENV_VARS.md](docs/ENV_VARS.md)
+- Артефакты модели: см. [docs/ARTIFACTS.md](docs/ARTIFACTS.md) и [docs/ARTIFACTS_DOWNLOAD.md](docs/ARTIFACTS_DOWNLOAD.md)
+- Развёртывание: см. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- Настройка производительности: см. [docs/PERFORMANCE_TUNING.md](docs/PERFORMANCE_TUNING.md)
 
 ## Разделение requirements
 - `requirements-prod.txt` — минимальные зависимости для API сервиса (FastAPI, Transformers, Torch и т.д.).
