@@ -3,7 +3,8 @@ services:
     build: .
     image: x5-ner:local
     environment:
-      - ARTIFACTS_DIR=/app/artifacts/rubert-base-cased/20250930-165530
+      - TZ=Europe/Moscow
+      - ARTIFACTS_DIR=/app/artifacts/rubert_base_cased_20250930_165530
       - X5_FORCE_DEVICE=cpu
       - TOKENIZERS_PARALLELISM=false
       - OMP_NUM_THREADS=1
@@ -32,9 +33,16 @@ services:
       - "8000:8000"
     volumes:
       - ./artifacts:/app/artifacts:ro
+    restart: on-failure
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health | grep -q 'ok'"]
       interval: 60s
       timeout: 3s
       retries: 3
       start_period: 30s
+    networks:
+        - x5-network
+
+networks:
+  x5-network:
+    driver: bridge
