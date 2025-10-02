@@ -2,25 +2,28 @@
 
 FastAPI сервис для выделения сущностей в коротких товарных описаниях (NER). Загружает совместимые с HuggingFace артефакты из `ARTIFACTS_DIR` и предоставляет REST API.
 
+В файле docs
 ## Содержание
 - Установка и запуск (локально и в Docker)
 - Конфигурация (переменные окружения)
 - Эндпоинты и примеры запросов
 - Артефакты модели и внешние источники
 - Нагрузочное тестирование и оффлайн-оценка
- - Полная API-спецификация и гайды
+- Полная API-спецификация и гайды
 
 ## Установка и запуск
 
 ### Требования
-- Python 3.10+
+- Python 3.9.6
 - Linux/macOS/Windows
 - Для Docker-режима: Docker 24+ и docker compose
 
 ### Локальный запуск (CPU)
 1) Создайте и активируйте виртуальное окружение
 ```
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
 ```
 2) Установите зависимости
 ```
@@ -31,13 +34,33 @@ pip install -r requirements.txt        # полный стек для .ipynb
 pip install -r requirements-dev.txt
 ```
 3) Подготовьте артефакты модели
-```
+
+- 1) Скачайте архив модели с диска `rubert_base_cased_20251002_111705.zip` из [Google Drive](https://drive.google.com/drive/folders/13WxzEEXwLt8el3-_sm_XkO_0YqUde5EA?usp=sharing).
+- 2) Разархивируйте его в каталог проекта так, чтобы итоговый путь был: `./artifacts/rubert-base-cased/20251002-111705`.
+
+```bash
 mkdir -p artifacts
-# Скопируйте файлы модели в ./artifacts или укажите путь через ARTIFACTS_DIR
+# Переместите распакованную папку rubert-base-cased/20251002-111705 в ./artifacts
 ```
+
+Проверьте, что в папке есть файлы:
+- `./artifacts/rubert-base-cased/20251002-111705/config.json`
+- `./artifacts/rubert-base-cased/20251002-111705/model.safetensors`
+- `./artifacts/rubert-base-cased/20251002-111705/tokenizer.json`
+- `./artifacts/rubert-base-cased/20251002-111705/vocab.txt`
+- `./artifacts/rubert-base-cased/20251002-111705/special_tokens_map.json`
 4) Запустите сервер
-```
-uvicorn service.main:app --host 0.0.0.0 --port 8000
+```bash
+cd /path/to/X5
+
+export ARTIFACTS_DIR="$(pwd)/artifacts/rubert-base-cased/20251002-111705"
+export TOKENIZERS_PARALLELISM=false
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export TORCH_NUM_THREADS=1
+export TORCH_NUM_INTEROP_THREADS=1
+
+uvicorn service.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 5) Откройте документацию
 ```
@@ -49,7 +72,7 @@ http://localhost:8000/docs
 ```
 docker build -t x5-ner:local .
 docker run --rm -p 8000:8000 \
-  -e ARTIFACTS_DIR=/app/artifacts/rubert-base-cased/20250930-113112 \
+  -e ARTIFACTS_DIR=/app/artifacts/rubert-base-cased/20251002-111705 \
   -e TOKENIZERS_PARALLELISM=false -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 \
   -v "$PWD/artifacts:/app/artifacts:ro" x5-ner:local
 ```
@@ -119,6 +142,7 @@ python scripts/load_test_predict.py \
 ```
 
 ## Полная документация
+- Архитектура решения: см. [docs/solution.md](docs/solution.md)
 - API-спецификация: см. `docs/API.md`
 - Переменные окружения: см. `docs/ENV_VARS.md`
 - Артефакты модели: см. `docs/ARTIFACTS.md` и `docs/ARTIFACTS_DOWNLOAD.md`

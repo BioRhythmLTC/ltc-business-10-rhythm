@@ -21,16 +21,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
-from dataclasses import dataclass
 import logging
 import os
 import random
 import statistics
 import time
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import aiohttp
-
 
 DEFAULT_CSV = os.environ.get(
     "LOADTEST_INPUT",
@@ -73,7 +72,9 @@ def _percentile(values: List[float], p: float) -> float:
     return values[f] + (values[c] - values[f]) * (k - f)
 
 
-def _parse_log_segments(path: str, endpoint: str = "/api/predict", target_total: int | None = None) -> List[int]:
+def _parse_log_segments(
+    path: str, endpoint: str = "/api/predict", target_total: int | None = None
+) -> List[int]:
     """Parse container logs into concurrency segments.
 
     Approximates concurrency by counting consecutive POST lines to the endpoint.
@@ -126,28 +127,56 @@ def _load_queries(path: str) -> List[str]:
     return qs
 
 
-async def _post_json(session: aiohttp.ClientSession, url: str, payload: dict, timeout_s: float, tag: str) -> Result:
+async def _post_json(
+    session: aiohttp.ClientSession, url: str, payload: dict, timeout_s: float, tag: str
+) -> Result:
     t0 = time.perf_counter()
     try:
-        async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=timeout_s)) as resp:
+        async with session.post(
+            url, json=payload, timeout=aiohttp.ClientTimeout(total=timeout_s)
+        ) as resp:
             _ = await resp.read()  # don't spend time parsing
-            return Result(ok=(resp.status == 200), latency_s=time.perf_counter() - t0, status=resp.status, tag=tag)
+            return Result(
+                ok=(resp.status == 200),
+                latency_s=time.perf_counter() - t0,
+                status=resp.status,
+                tag=tag,
+            )
     except Exception:
         return Result(ok=False, latency_s=time.perf_counter() - t0, status=0, tag=tag)
 
 
-async def _get(session: aiohttp.ClientSession, url: str, timeout_s: float, tag: str) -> Result:
+async def _get(
+    session: aiohttp.ClientSession, url: str, timeout_s: float, tag: str
+) -> Result:
     t0 = time.perf_counter()
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout_s)) as resp:
+        async with session.get(
+            url, timeout=aiohttp.ClientTimeout(total=timeout_s)
+        ) as resp:
             _ = await resp.read()
             ok = (200 <= resp.status < 400) or (tag == "scan" and resp.status == 404)
-            return Result(ok=ok, latency_s=time.perf_counter() - t0, status=resp.status, tag=tag)
+            return Result(
+                ok=ok, latency_s=time.perf_counter() - t0, status=resp.status, tag=tag
+            )
     except Exception:
         return Result(ok=False, latency_s=time.perf_counter() - t0, status=0, tag=tag)
 
 
-async def scenario_runner(base_url: str, duration_s: int, rps: int, batch_size: int, timeout_s: float, noise_health_every: float, noise_scan_every: float, burst_rps: int | None = None, burst_every_s: int = 10, burst_len_s: int = 2, target_total: Optional[int] = None, log_requests: bool = False) -> Tuple[List[Result], List[Result]]:
+async def scenario_runner(
+    base_url: str,
+    duration_s: int,
+    rps: int,
+    batch_size: int,
+    timeout_s: float,
+    noise_health_every: float,
+    noise_scan_every: float,
+    burst_rps: int | None = None,
+    burst_every_s: int = 10,
+    burst_len_s: int = 2,
+    target_total: Optional[int] = None,
+    log_requests: bool = False,
+) -> Tuple[List[Result], List[Result]]:
     connector = aiohttp.TCPConnector(limit=0, ssl=False)
     predict_single = base_url.rstrip("/") + "/api/predict"
     predict_batch = base_url.rstrip("/") + "/api/predict_batch"
@@ -173,7 +202,9 @@ async def scenario_runner(base_url: str, duration_s: int, rps: int, batch_size: 
                 break
             now = time.monotonic()
             cur_rps = rps
-            if burst_rps and ((int(now - start) % max(1, int(burst_every_s))) < burst_len_s):
+            if burst_rps and (
+                (int(now - start) % max(1, int(burst_every_s))) < burst_len_s
+            ):
                 cur_rps = max(cur_rps, burst_rps)
 
             # schedule main requests for this 100ms timeslice
@@ -186,21 +217,45 @@ async def scenario_runner(base_url: str, duration_s: int, rps: int, batch_size: 
             for _ in range(schedule_budget):
                 if batch_size > 1:
                     batch = [random.choice(GLOBAL_QUERIES) for _ in range(batch_size)]
-                    to_schedule.append(asyncio.create_task(_post_json(session, predict_batch, {"inputs": batch}, timeout_s, tag=f"batch[{batch_size}]")))
+                    to_schedule.append(
+                        asyncio.create_task(
+                            _post_json(
+                                session,
+                                predict_batch,
+                                {"inputs": batch},
+                                timeout_s,
+                                tag=f"batch[{batch_size}]",
+                            )
+                        )
+                    )
                 else:
                     q = random.choice(GLOBAL_QUERIES)
-                    to_schedule.append(asyncio.create_task(_post_json(session, predict_single, {"input": q}, timeout_s, tag="single")))
+                    to_schedule.append(
+                        asyncio.create_task(
+                            _post_json(
+                                session,
+                                predict_single,
+                                {"input": q},
+                                timeout_s,
+                                tag="single",
+                            )
+                        )
+                    )
             sent += len(to_schedule)
 
             # noise: health checks
             if now >= next_noise_health:
                 next_noise_health = now + max(0.1, float(noise_health_every))
-                noise_results.append(await _get(session, health, timeout_s=timeout_s, tag="health"))
+                noise_results.append(
+                    await _get(session, health, timeout_s=timeout_s, tag="health")
+                )
 
             # noise: random 404 scan
             if now >= next_noise_scan:
                 next_noise_scan = now + max(0.5, float(noise_scan_every))
-                noise_results.append(await _get(session, junk, timeout_s=timeout_s, tag="scan"))
+                noise_results.append(
+                    await _get(session, junk, timeout_s=timeout_s, tag="scan")
+                )
 
             # execute scheduled main requests concurrently and collect
             outstanding = []
@@ -209,12 +264,16 @@ async def scenario_runner(base_url: str, duration_s: int, rps: int, batch_size: 
             if to_schedule:
                 outstanding.extend(to_schedule)
             if outstanding:
-                done, pending = await asyncio.wait(set(outstanding), timeout=slice_ms / 1000.0)
+                done, pending = await asyncio.wait(
+                    set(outstanding), timeout=slice_ms / 1000.0
+                )
                 collected = [t.result() for t in done if t.done()]
                 results.extend(collected)
                 if log_requests and collected:
                     for r in collected:
-                        logging.debug(f"request ok={r.ok} status={r.status} latency_s={r.latency_s:.6f} tag={r.tag}")
+                        logging.debug(
+                            f"request ok={r.ok} status={r.status} latency_s={r.latency_s:.6f} tag={r.tag}"
+                        )
                 pending_tasks = list(pending)
 
             # sleep till next timeslice
@@ -227,17 +286,30 @@ async def scenario_runner(base_url: str, duration_s: int, rps: int, batch_size: 
                 if isinstance(d, Result):
                     results.append(d)
                     if log_requests:
-                        logging.debug(f"request ok={d.ok} status={d.status} latency_s={d.latency_s:.6f} tag={d.tag}")
+                        logging.debug(
+                            f"request ok={d.ok} status={d.status} latency_s={d.latency_s:.6f} tag={d.tag}"
+                        )
                 else:
                     fail = Result(ok=False, latency_s=0.0, status=0, tag="single")
                     results.append(fail)
                     if log_requests:
-                        logging.debug(f"request ok={fail.ok} status={fail.status} latency_s={fail.latency_s:.6f} tag={fail.tag}")
+                        logging.debug(
+                            f"request ok={fail.ok} status={fail.status} latency_s={fail.latency_s:.6f} tag={fail.tag}"
+                        )
 
     return results, noise_results
 
 
-async def replay_runner(base_url: str, log_path: str, queries: List[str], timeout_s: float, target_total: int, endpoint: str = "/api/predict", resp_log: Optional[str] = None, log_requests: bool = False) -> List[Result]:
+async def replay_runner(
+    base_url: str,
+    log_path: str,
+    queries: List[str],
+    timeout_s: float,
+    target_total: int,
+    endpoint: str = "/api/predict",
+    resp_log: Optional[str] = None,
+    log_requests: bool = False,
+) -> List[Result]:
     """Replay traffic profile from logs with identical burst sizes and total.
 
     Schedules exactly target_total requests to endpoint using provided queries
@@ -245,7 +317,9 @@ async def replay_runner(base_url: str, log_path: str, queries: List[str], timeou
     """
     connector = aiohttp.TCPConnector(limit=0, ssl=False)
     url = base_url.rstrip("/") + endpoint
-    segments = _parse_log_segments(log_path, endpoint=endpoint, target_total=target_total)
+    segments = _parse_log_segments(
+        log_path, endpoint=endpoint, target_total=target_total
+    )
     if not segments:
         segments = [target_total]
 
@@ -265,7 +339,9 @@ async def replay_runner(base_url: str, log_path: str, queries: List[str], timeou
             for _ in range(burst):
                 q = queries[qi]
                 qi = (qi + 1) % qn
-                tasks.append(_post_json(session, url, {"input": q}, timeout_s, tag="replay"))
+                tasks.append(
+                    _post_json(session, url, {"input": q}, timeout_s, tag="replay")
+                )
             # Wait for all tasks in the burst to complete (or raise)
             burst_results = await asyncio.gather(*tasks, return_exceptions=True)
             # Normalize exceptions into failed Results
@@ -280,7 +356,9 @@ async def replay_runner(base_url: str, log_path: str, queries: List[str], timeou
             results.extend(out)
             if log_requests and out:
                 for r in out:
-                    logging.debug(f"request ok={r.ok} status={r.status} latency_s={r.latency_s:.6f} tag={r.tag}")
+                    logging.debug(
+                        f"request ok={r.ok} status={r.status} latency_s={r.latency_s:.6f} tag={r.tag}"
+                    )
             sent += burst
             if resp_log:
                 _append_results_csv(resp_log, out)
@@ -313,7 +391,9 @@ def summarize(title: str, rs: List[Result], sla: float) -> None:
     median_latency = statistics.median(lat_for_median) if lat_for_median else 0.0
 
     logging.info(f"\n=== {title} ===")
-    logging.info(f"Total: {total}  Success: {okc}  Fail: {fails}  OverSLA(>{sla:.3f}s): {over_sla}")
+    logging.info(
+        f"Total: {total}  Success: {okc}  Fail: {fails}  OverSLA(>{sla:.3f}s): {over_sla}"
+    )
     logging.info(f"Median latency (s, with >SLA set to 0): {median_latency:.3f}")
 
 
@@ -324,19 +404,67 @@ def main() -> None:
     ap.add_argument("--sla", type=float, default=1.0)
     ap.add_argument("--duration", type=int, default=30, help="seconds")
     ap.add_argument("--rps", type=int, default=200, help="steady RPS for main traffic")
-    ap.add_argument("--burst_rps", type=int, default=600, help="RPS during bursts (micro-batch stress)")
+    ap.add_argument(
+        "--burst_rps",
+        type=int,
+        default=600,
+        help="RPS during bursts (micro-batch stress)",
+    )
     ap.add_argument("--burst_every", type=int, default=10, help="burst period seconds")
     ap.add_argument("--burst_len", type=int, default=2, help="burst length seconds")
-    ap.add_argument("--batch-size", type=int, default=1, help=">1 sends /api/predict_batch")
-    ap.add_argument("--noise_health_every", type=float, default=2.0, help="seconds between health checks")
-    ap.add_argument("--noise_scan_every", type=float, default=5.0, help="seconds between random 404 scans")
-    ap.add_argument("--replay_logs", type=str, default=None, help="Path to container logs to replay traffic profile")
-    ap.add_argument("--replay_total", type=int, default=5000, help="Exact number of POST requests to send in replay mode")
-    ap.add_argument("--replay_endpoint", type=str, default="/api/predict", help="Endpoint path to match in logs and replay to")
-    ap.add_argument("--resp_log", type=str, default=None, help="Optional path to write response results CSV")
-    ap.add_argument("--log_level", type=str, default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR)")
-    ap.add_argument("--log_file", type=str, default=None, help="Optional path to log file")
-    ap.add_argument("--log_requests", action="store_true", help="Log each request result at DEBUG level")
+    ap.add_argument(
+        "--batch-size", type=int, default=1, help=">1 sends /api/predict_batch"
+    )
+    ap.add_argument(
+        "--noise_health_every",
+        type=float,
+        default=2.0,
+        help="seconds between health checks",
+    )
+    ap.add_argument(
+        "--noise_scan_every",
+        type=float,
+        default=5.0,
+        help="seconds between random 404 scans",
+    )
+    ap.add_argument(
+        "--replay_logs",
+        type=str,
+        default=None,
+        help="Path to container logs to replay traffic profile",
+    )
+    ap.add_argument(
+        "--replay_total",
+        type=int,
+        default=5000,
+        help="Exact number of POST requests to send in replay mode",
+    )
+    ap.add_argument(
+        "--replay_endpoint",
+        type=str,
+        default="/api/predict",
+        help="Endpoint path to match in logs and replay to",
+    )
+    ap.add_argument(
+        "--resp_log",
+        type=str,
+        default=None,
+        help="Optional path to write response results CSV",
+    )
+    ap.add_argument(
+        "--log_level",
+        type=str,
+        default="INFO",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR)",
+    )
+    ap.add_argument(
+        "--log_file", type=str, default=None, help="Optional path to log file"
+    )
+    ap.add_argument(
+        "--log_requests",
+        action="store_true",
+        help="Log each request result at DEBUG level",
+    )
     args = ap.parse_args()
 
     # setup logging
@@ -358,7 +486,9 @@ def main() -> None:
     loop = asyncio.get_event_loop()
 
     if args.replay_logs:
-        logging.info(f"Starting LOG REPLAY from {args.replay_logs} (total={args.replay_total})...")
+        logging.info(
+            f"Starting LOG REPLAY from {args.replay_logs} (total={args.replay_total})..."
+        )
         rs_replay = loop.run_until_complete(
             replay_runner(
                 base_url=args.base_url,
@@ -375,7 +505,11 @@ def main() -> None:
         return
 
     # If replay_total is provided without logs, cap total requests across scenarios
-    cap_total = max(0, int(args.replay_total)) if (args.replay_logs is None and args.replay_total) else None
+    cap_total = (
+        max(0, int(args.replay_total))
+        if (args.replay_logs is None and args.replay_total)
+        else None
+    )
 
     logging.info("Starting STEADY scenario (single requests)...")
     rs, noise = loop.run_until_complete(
@@ -420,5 +554,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
