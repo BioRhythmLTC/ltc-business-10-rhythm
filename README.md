@@ -118,17 +118,6 @@ python scripts/load_test_predict.py \
   --log_requests eval_out/load_requests.csv
 ```
 
-## Оффлайн-оценка
-Скрипт оффлайн-оценки предсказаний сервиса:
-```
-python scripts/evaluate_service.py \
-  --input examples/annotated_sample.csv \
-  --output_dir eval_out \
-  --base_url http://localhost:8000 \
-  --batch_size 32
-```
-Выходы: `eval_results.csv`, `eval_report.html`, `eval_stats.json`.
-
 ## Полная документация
 - API-спецификация: см. `docs/API.md`
 - Переменные окружения: см. `docs/ENV_VARS.md`
